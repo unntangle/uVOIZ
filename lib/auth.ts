@@ -1,0 +1,159 @@
+import { SignJWT, jwtVerify } from 'jose';
+import { cookies } from 'next/headers';
+import { NextRequest } from 'next/server';
+import { supabaseAdmin } from './supabase';
+
+const SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'voiceai_jwt_secret_change_in_production_2024'
+);
+const COOKIE_NAME = 'va_session';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+
+export type SessionUser = {
+  id: string;
+  email: string;
+  name: string;
+  orgId: string;
+  orgName: string;
+  plan: string;
+  role: string;
+};
+
+// ---- Create JWT token ----
+export async function createToken(user: SessionUser): Promise<string> {
+  return new SignJWT({ ...user })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('7d')
+    .sign(SECRET);
+}
+
+// ---- Verify JWT token ----
+export async function verifyToken(token: string): Promise<SessionUser | null> {
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    return payload as unknown as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+// ---- Get current session from cookies ----
+export async function getSession(): Promise<SessionUser | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  return verifyToken(token);
+}
+
+// ---- Get session from request (for API routes) ----
+export async function getSessionFromRequest(req: NextRequest): Promise<SessionUser | null> {
+  const token = req.cookies.get(COOKIE_NAME)?.value;
+  if (!token) return null;
+  return verifyToken(token);
+}
+
+// ---- Cookie options ----
+export function sessionCookieOptions(token: string) {
+  return {
+    name: COOKIE_NAME,
+    value: token,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: COOKIE_MAX_AGE,
+    path: '/',
+  };
+}
+
+// ---- Register new user ----
+export async function registerUser(
+  email: string,
+  password: string,
+  companyName: string
+): Promise<{ user?: SessionUser; error?: string }> {
+  const bcrypt = await import('bcryptjs');
+
+  // Check existing
+  const { data: existing } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .eq('email', email.toLowerCase())
+    .single();
+
+  if (existing) return { error: 'Email already registered. Please sign in.' };
+
+  // Hash password
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  // Create org
+  const { data: org, error: orgErr } = await supabaseAdmin
+    .from('organizations')
+    .insert({ name: companyName, plan: 'starter', minutes_limit: 1000 })
+    .select()
+    .single();
+
+  if (orgErr || !org) return { error: 'Failed to create account. Try again.' };
+
+  // Create user
+  const { data: dbUser, error: userErr } = await supabaseAdmin
+    .from('users')
+    .insert({
+      email: email.toLowerCase(),
+      password_hash: passwordHash,
+      name: companyName,
+      org_id: org.id,
+      role: 'admin',
+    })
+    .select()
+    .single();
+
+  if (userErr || !dbUser) return { error: 'Failed to create user. Try again.' };
+
+  const sessionUser: SessionUser = {
+    id: dbUser.id,
+    email: dbUser.email,
+    name: dbUser.name,
+    orgId: org.id,
+    orgName: org.name,
+    plan: org.plan,
+    role: dbUser.role,
+  };
+
+  return { user: sessionUser };
+}
+
+// ---- Login user ----
+export async function loginUser(
+  email: string,
+  password: string
+): Promise<{ user?: SessionUser; error?: string }> {
+  const bcrypt = await import('bcryptjs');
+
+  const { data: dbUser } = await supabaseAdmin
+    .from('users')
+    .select('*, organizations(id, name, plan)')
+    .eq('email', email.toLowerCase())
+    .single();
+
+  if (!dbUser) return { error: 'Invalid email or password.' };
+
+  const valid = await bcrypt.compare(password, dbUser.password_hash);
+  if (!valid) return { error: 'Invalid email or password.' };
+
+  const org = Array.isArray(dbUser.organizations)
+    ? dbUser.organizations[0]
+    : dbUser.organizations;
+
+  const sessionUser: SessionUser = {
+    id: dbUser.id,
+    email: dbUser.email,
+    name: dbUser.name,
+    orgId: org?.id || '',
+    orgName: org?.name || '',
+    plan: org?.plan || 'starter',
+    role: dbUser.role,
+  };
+
+  return { user: sessionUser };
+}
