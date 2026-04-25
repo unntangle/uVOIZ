@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getSessionFromRequest } from '@/lib/auth';
 import { getOrg, getAgents, createAgent } from '@/lib/db';
 import { createVapiAssistant } from '@/lib/vapi';
 
 export async function GET(req: NextRequest) {
   try {
-    const { userId, orgId } = await auth();
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const org = await getOrg(orgId || userId);
+    const org = await getOrg(session.orgId);
     if (!org) return NextResponse.json({ agents: [] });
 
     const agents = await getAgents(org.id);
@@ -21,10 +21,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, orgId } = await auth();
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const org = await getOrg(orgId || userId);
+    const org = await getOrg(session.orgId);
     if (!org) return NextResponse.json({ error: 'Organisation not found' }, { status: 404 });
 
     const body = await req.json();
@@ -55,9 +55,14 @@ export async function POST(req: NextRequest) {
       vapiAssistantId,
     });
 
+    if (!agent) {
+      require('fs').writeFileSync('scratch/error.log', 'Agent is null. Supabase insert failed.');
+    }
+
     return NextResponse.json({ agent });
-  } catch (error) {
+  } catch (error: any) {
     console.error('POST agent error:', error);
-    return NextResponse.json({ error: 'Failed to create agent' }, { status: 500 });
+    require('fs').writeFileSync('scratch/error.log', JSON.stringify({ message: error.message, stack: error.stack }, null, 2));
+    return NextResponse.json({ error: 'Failed to create agent', details: error.message }, { status: 500 });
   }
 }

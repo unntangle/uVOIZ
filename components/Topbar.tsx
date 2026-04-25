@@ -5,6 +5,7 @@ import Link from 'next/link';
 interface Crumb {
   label: string;
   href?: string;
+  onClick?: () => void;
 }
 
 interface TopbarProps {
@@ -34,7 +35,14 @@ export default function Topbar({
         {crumbs.map((c, i) => (
           <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {i > 0 && <ChevronRight size={13} color="var(--text3)" />}
-            {c.href ? (
+            {c.onClick ? (
+              <button 
+                onClick={c.onClick}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text2)', textDecoration: 'none', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
+              >
+                {c.label}
+              </button>
+            ) : c.href ? (
               <Link href={c.href} style={{ color: 'var(--text2)', textDecoration: 'none', fontWeight: 500 }}>
                 {c.label}
               </Link>

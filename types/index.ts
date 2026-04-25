@@ -2,6 +2,15 @@ export type CallStatus = 'queued' | 'ringing' | 'in-progress' | 'completed' | 'f
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed';
 export type AgentStatus = 'active' | 'inactive' | 'training';
 
+export interface Contact {
+  id: string;
+  orgId: string;
+  campaignId: string;
+  name: string;
+  phone: string;
+  createdAt: Date;
+}
+
 export interface Call {
   id: string;
   campaignId: string;

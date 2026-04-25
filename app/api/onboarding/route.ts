@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth, currentUser } from '@clerk/nextjs/server';
+import { getSessionFromRequest } from '@/lib/auth';
 import { getOrg, createOrg } from '@/lib/db';
 import { createVapiAssistant } from '@/lib/vapi';
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, orgId } = await auth();
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const user = await currentUser();
     const body = await req.json();
     const { companyName, phone, industry, language, plan } = body;
 
     // Create or get org in Supabase
-    const clerkOrgId = orgId || userId;
-    let org = await getOrg(clerkOrgId);
+    const orgId = session.orgId;
+    let org = await getOrg(orgId);
 
     if (!org) {
-      org = await createOrg(clerkOrgId, companyName || user?.firstName + ' BPO');
+      org = await createOrg(orgId, companyName || session.name + ' BPO');
     }
 
     // Create a default AI agent for the org

@@ -1,12 +1,11 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
-import { mockCalls } from '@/lib/mock-data';
 import { Download, Play, Filter } from 'lucide-react';
 import { formatDuration, timeAgo } from '@/lib/utils';
-import { CallStatus } from '@/types';
+import { Call, CallStatus } from '@/types';
 
 const STATUS_BADGE: Record<CallStatus, string> = {
   'in-progress': 'badge-green', ringing: 'badge-amber', completed: 'badge-cyan',
@@ -16,7 +15,28 @@ const SENTIMENT_BADGE: Record<string, string> = { positive: 'badge-green', neutr
 
 export default function Calls() {
   const [filter, setFilter] = useState<'all' | CallStatus>('all');
-  const filtered = filter === 'all' ? mockCalls : mockCalls.filter(c => c.status === filter);
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchCalls() {
+      try {
+        const res = await fetch('/api/calls');
+        if (res.ok) {
+          const data = await res.json();
+          setCalls(data.calls || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch calls:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchCalls();
+  }, []);
+
+  const filtered = filter === 'all' ? calls : calls.filter(c => c.status === filter);
+  const liveCount = calls.filter(c => c.status === 'in-progress').length;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -39,7 +59,7 @@ export default function Calls() {
             {(['all', 'in-progress', 'completed', 'failed', 'no-answer'] as const).map(s => (
               <button key={s} onClick={() => setFilter(s)} style={{ padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', background: filter === s ? 'var(--accent)' : 'var(--bg3)', color: filter === s ? 'white' : 'var(--text2)', fontSize: 13, fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
                 {s === 'all' ? 'All' : s.replace('-', ' ')}
-                <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{s === 'all' ? mockCalls.length : mockCalls.filter(c => c.status === s).length}</span>
+                <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 11 }}>{s === 'all' ? calls.length : calls.filter(c => c.status === s).length}</span>
               </button>
             ))}
           </div>
@@ -50,7 +70,7 @@ export default function Calls() {
                 <tr><th>Contact</th><th>Campaign</th><th>Agent</th><th>Status</th><th>Duration</th><th>Sentiment</th><th>Converted</th><th>Time</th><th>Actions</th></tr>
               </thead>
               <tbody>
-                {filtered.map(call => (
+                {filtered.length > 0 ? filtered.map(call => (
                   <tr key={call.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -67,7 +87,7 @@ export default function Calls() {
                     <td><span className="mono" style={{ fontSize: 13 }}>{formatDuration(call.duration)}</span></td>
                     <td>{call.sentiment ? <span className={`badge ${SENTIMENT_BADGE[call.sentiment]}`}>{call.sentiment}</span> : <span style={{ color: 'var(--text3)', fontSize: 12 }}>-</span>}</td>
                     <td>{call.converted ? <span style={{ color: 'var(--green)', fontWeight: 600 }}>Yes</span> : <span style={{ color: 'var(--text3)', fontSize: 12 }}>No</span>}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text3)' }}>{call.startedAt ? timeAgo(call.startedAt) : '-'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text3)' }}>{call.startedAt ? timeAgo(new Date(call.startedAt)) : '-'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {call.recordingUrl && <button className="btn btn-ghost btn-sm btn-icon"><Play size={12} /></button>}
@@ -75,7 +95,9 @@ export default function Calls() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )) : (
+                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: '32px', color: 'var(--text3)', fontSize: 14 }}>{loading ? 'Loading calls...' : 'No calls found'}</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -84,10 +106,10 @@ export default function Calls() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <div className="live-dot" />
               <span style={{ fontWeight: 600 }}>Live Calls Monitor</span>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{mockCalls.filter(c => c.status === 'in-progress').length} active</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{liveCount} active</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-              {mockCalls.filter(c => c.status === 'in-progress' || c.status === 'ringing').map(call => (
+              {calls.filter(c => c.status === 'in-progress' || c.status === 'ringing').map(call => (
                 <div key={call.id} style={{ background: 'var(--bg3)', borderRadius: 10, padding: 14, border: '1px solid rgba(34,197,94,0.2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -106,6 +128,9 @@ export default function Calls() {
                   <div style={{ fontSize: 11, color: 'var(--text3)' }}>Agent: <span style={{ color: 'var(--accent2)' }}>{call.agentName}</span></div>
                 </div>
               ))}
+              {liveCount === 0 && !loading && (
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '20px', color: 'var(--text3)', fontSize: 12 }}>No live calls active</div>
+              )}
             </div>
           </div>
 

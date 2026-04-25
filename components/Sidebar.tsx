@@ -6,16 +6,14 @@ import Image from 'next/image';
 
 const NAV_MAIN = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-  { icon: Phone, label: 'Live Calls', href: '/calls', badge: '47' },
-  { icon: Megaphone, label: 'Campaigns', href: '/campaigns' },
   { icon: Bot, label: 'AI Agents', href: '/agents' },
+  { icon: Megaphone, label: 'Campaigns', href: '/campaigns' },
+  { icon: Phone, label: 'Live Calls', href: '/calls', badge: '47' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
   { icon: CreditCard, label: 'Billing', href: '/billing' },
 ];
 
 const NAV_MORE = [
-  { icon: Users, label: 'Workspace Members', href: '/settings?tab=members' },
-  { icon: Key, label: 'API Key', href: '/settings?tab=api' },
   { icon: Settings, label: 'Settings', href: '/settings' },
   { icon: HelpCircle, label: 'Contact Us', href: '/contact' },
 ];
@@ -100,7 +98,7 @@ export default function Sidebar({
       {/* Nav */}
       <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 1, overflowY: 'auto' }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', padding: '6px 10px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          App
+          Main Menu
         </div>
         {NAV_MAIN.map(({ icon: Icon, label, href, badge }) => (
           <a key={href} href={href} className={`nav-item ${active === href ? 'active' : ''}`}>
@@ -117,7 +115,7 @@ export default function Sidebar({
         ))}
 
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', padding: '18px 10px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          More
+          General
         </div>
         {NAV_MORE.map(({ icon: Icon, label, href }) => (
           <a key={href} href={href} className={`nav-item ${active === href ? 'active' : ''}`}>

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
@@ -24,6 +24,16 @@ declare global {
 export default function Billing() {
   const [loading, setLoading] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [org, setOrg] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/onboarding')
+      .then(res => res.json())
+      .then(data => {
+        if (data.org) setOrg(data.org);
+      })
+      .catch(err => console.error('Failed to fetch org:', err));
+  }, []);
 
   const handleUpgrade = async (planId: string, planPrice: number) => {
     setLoading(planId);
@@ -87,6 +97,10 @@ export default function Billing() {
     }
   };
 
+  const minutesUsed = org?.minutes_used || 0;
+  const minutesLimit = org?.minutes_limit || 1000;
+  const minutePct = Math.min(100, (minutesUsed / minutesLimit) * 100);
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar active="/billing" />
@@ -109,15 +123,15 @@ export default function Billing() {
           {/* Usage */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {[
-              { label: 'Minutes Used', value: '4,231', total: '5,000', pct: 84.6, color: 'var(--amber)' },
-              { label: 'Calls Made', value: '1,284', total: 'Unlimited', pct: null, color: 'var(--accent)' },
-              { label: 'Active Agents', value: '3', total: '5', pct: 60, color: 'var(--cyan)' },
-              { label: 'Next Billing', value: 'Rs.40,000', total: 'Apr 1, 2024', pct: null, color: 'var(--green)' },
+              { label: 'Minutes Used', value: minutesUsed.toLocaleString(), total: minutesLimit === 999999 ? '∞' : minutesLimit.toLocaleString(), pct: minutePct, color: 'var(--amber)' },
+              { label: 'Active Plan', value: (org?.plan || 'Starter').toUpperCase(), total: 'Billing: Monthly', pct: null, color: 'var(--accent)' },
+              { label: 'Active Agents', value: '3', total: 'Limit: 5', pct: 60, color: 'var(--cyan)' },
+              { label: 'Next Billing', value: 'Apr 1, 2024', total: 'Auto-renewal', pct: null, color: 'var(--green)' },
             ].map(u => (
               <div key={u.label} className="stat-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontSize: 13, color: 'var(--text2)' }}>{u.label}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>/ {u.total}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>{u.total}</span>
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: u.color, marginBottom: 8 }}>{u.value}</div>
                 {u.pct !== null && (

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getSessionFromRequest } from '@/lib/auth';
 import { verifySignature, PLANS } from '@/lib/razorpay';
 import { getOrg } from '@/lib/db';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, orgId } = await auth();
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const org = await getOrg(orgId || userId);
+    const org = await getOrg(session.orgId);
     if (!org) return NextResponse.json({ error: 'Organisation not found' }, { status: 404 });
 
     const body = await req.json();

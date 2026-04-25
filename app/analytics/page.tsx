@@ -1,10 +1,12 @@
 "use client";
+import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
-import { mockWeeklyData, mockChartData, mockAgents } from '@/lib/mock-data';
+import { mockWeeklyData, mockChartData } from '@/lib/mock-data';
 import { formatPercent, formatDuration } from '@/lib/utils';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { Agent, DashboardStats } from '@/types';
 
 const Tip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
@@ -30,6 +32,39 @@ const outcomeData = [
 ];
 
 export default function Analytics() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [statsRes, agentsRes] = await Promise.all([
+          fetch('/api/analytics/stats'),
+          fetch('/api/agents'),
+        ]);
+
+        if (statsRes.ok) setStats(await statsRes.json());
+        if (agentsRes.ok) {
+          const data = await agentsRes.json();
+          setAgents(data.agents || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch analytics data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  const languageData = [
+    { name: 'English', value: 45, color: '#0AB4F5' },
+    { name: 'Hindi', value: 35, color: '#22c55e' },
+    { name: 'Tamil', value: 15, color: '#f59e0b' },
+    { name: 'Others', value: 5, color: '#888' },
+  ];
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar active="/analytics" />
@@ -45,11 +80,11 @@ export default function Analytics() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
             {[
-              { label: 'Total Calls', value: '28,420', sub: 'This month' },
-              { label: 'Conversion Rate', value: '23.4%', sub: '+3.2% vs last month' },
-              { label: 'Avg Duration', value: '2:22', sub: 'Per call' },
-              { label: 'Cost per Call', value: '1.24', sub: 'All-in cost' },
-              { label: 'Revenue Generated', value: '12.4L', sub: 'Via conversions' },
+              { label: 'Total Calls', value: (stats?.totalCallsToday || 0).toLocaleString(), sub: 'Today' },
+              { label: 'Conversion Rate', value: formatPercent(stats?.conversionRate || 0), sub: stats?.conversionChange ? `${stats.conversionChange}% vs yesterday` : 'Steady' },
+              { label: 'Avg Duration', value: formatDuration(stats?.avgCallDuration || 0), sub: 'Per call' },
+              { label: 'Cost per Call', value: '₹1.24', sub: 'All-in cost' },
+              { label: 'Revenue Generated', value: '₹12.4L', sub: 'Via conversions' },
             ].map(k => (
               <div key={k.label} className="stat-card">
                 <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{k.value}</div>
@@ -124,7 +159,7 @@ export default function Analytics() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: 16 }}>
             <div className="card">
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Weekly Performance</div>
               <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>Calls and conversions by day</div>
@@ -142,21 +177,43 @@ export default function Analytics() {
             </div>
 
             <div className="card">
-              <div style={{ fontWeight: 600, marginBottom: 16 }}>Agent Leaderboard</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {mockAgents.filter(a => a.callsHandled > 0).sort((a, b) => b.successRate - a.successRate).map((agent, i) => (
-                  <div key={agent.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? 'rgba(245,158,11,0.2)' : i === 1 ? 'rgba(180,180,180,0.15)' : 'var(--bg4)', fontSize: 12, fontWeight: 700, color: i === 0 ? '#f59e0b' : i === 1 ? '#aaa' : 'var(--text3)' }}>#{i + 1}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{agent.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{agent.language} · {agent.callsHandled.toLocaleString()} calls</div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Language Distribution</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>Calls by language</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie data={languageData} cx="50%" cy="50%" innerRadius={0} outerRadius={65} paddingAngle={0} dataKey="value">
+                    {languageData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip formatter={(val) => `${val}%`} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                {languageData.map(l => (
+                  <div key={l.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: l.color }} />
+                      <span style={{ color: 'var(--text2)' }}>{l.name}</span>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 700, color: 'var(--green)', fontSize: 15 }}>{formatPercent(agent.successRate)}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>success rate</div>
-                    </div>
+                    <span style={{ fontWeight: 600 }}>{l.value}%</span>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="card">
+              <div style={{ fontWeight: 600, marginBottom: 16 }}>Agent Leaderboard</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {agents.length > 0 ? agents.filter(a => a.callsHandled > 0).sort((a, b) => b.successRate - a.successRate).slice(0, 5).map((agent, i) => (
+                  <div key={agent.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? 'rgba(245,158,11,0.2)' : 'var(--bg4)', fontSize: 11, fontWeight: 700, color: i === 0 ? '#f59e0b' : 'var(--text3)' }}>#{i + 1}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{agent.name}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{formatPercent(agent.successRate)} success</div>
+                    </div>
+                  </div>
+                )) : (
+                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text3)', fontSize: 12 }}>No agent data</div>
+                )}
               </div>
             </div>
           </div>

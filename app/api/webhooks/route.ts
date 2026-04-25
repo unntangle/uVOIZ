@@ -6,6 +6,11 @@ import { supabaseAdmin } from '@/lib/supabase';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    if (!supabaseAdmin) {
+      console.warn('VAPI webhook received but Supabase is not configured. Skipping processing.');
+      return NextResponse.json({ received: true });
+    }
+
     const event = parseWebhookEvent(body);
 
     if (!event) return NextResponse.json({ received: true });

@@ -72,6 +72,9 @@ export async function registerUser(
   password: string,
   companyName: string
 ): Promise<{ user?: SessionUser; error?: string }> {
+  if (!supabaseAdmin) {
+    return { error: 'Database not configured. Please set up Supabase environment variables.' };
+  }
   const bcrypt = await import('bcryptjs');
 
   // Check existing
@@ -128,6 +131,9 @@ export async function loginUser(
   email: string,
   password: string
 ): Promise<{ user?: SessionUser; error?: string }> {
+  if (!supabaseAdmin) {
+    return { error: 'Database not configured. Please set up Supabase environment variables.' };
+  }
   const bcrypt = await import('bcryptjs');
 
   const { data: dbUser } = await supabaseAdmin

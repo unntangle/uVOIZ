@@ -1,19 +1,21 @@
 import { supabaseAdmin } from './supabase';
 
 // ---- Organizations ----
-export async function getOrg(clerkOrgId: string) {
+export async function getOrg(orgId: string) {
+  if (!supabaseAdmin) return null;
   const { data } = await supabaseAdmin
     .from('organizations')
     .select('*')
-    .eq('clerk_org_id', clerkOrgId)
+    .or(`id.eq.${orgId},clerk_org_id.eq.${orgId}`)
     .single();
   return data;
 }
 
-export async function createOrg(clerkOrgId: string, name: string) {
+export async function createOrg(orgId: string, name: string) {
+  if (!supabaseAdmin) return null;
   const { data } = await supabaseAdmin
     .from('organizations')
-    .insert({ clerk_org_id: clerkOrgId, name })
+    .insert({ id: orgId, name })
     .select()
     .single();
   return data;
@@ -74,7 +76,7 @@ export async function getAgents(orgId: string) {
 export async function createAgent(orgId: string, payload: {
   name: string; voice: string; language: string; personality: string; script: string; vapiAssistantId?: string;
 }) {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('agents')
     .insert({
       org_id: orgId,
@@ -87,6 +89,12 @@ export async function createAgent(orgId: string, payload: {
     })
     .select()
     .single();
+  
+  if (error) {
+    console.error("Supabase createAgent Error:", error);
+    require('fs').writeFileSync('scratch/supabase_error.log', JSON.stringify(error, null, 2));
+  }
+  
   return data;
 }
 

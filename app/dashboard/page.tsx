@@ -1,13 +1,15 @@
 "use client";
-import { Phone, TrendingUp, Clock, Activity, PauseCircle, Plus, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Phone, TrendingUp, Clock, Activity, PauseCircle, Plus, Search, Calendar, ChevronRight, User, Bot, CreditCard } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import StatCard from '@/components/StatCard';
 import LiveCallCard from '@/components/LiveCallCard';
-import { mockStats, mockCalls, mockCampaigns, mockChartData, mockWeeklyData } from '@/lib/mock-data';
+import { mockChartData, mockWeeklyData } from '@/lib/mock-data';
 import { formatDuration, formatNumber, formatPercent } from '@/lib/utils';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { Call, Campaign, DashboardStats } from '@/types';
 
 const Tip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
@@ -20,8 +22,41 @@ const Tip = ({ active, payload, label }: any) => {
 };
 
 export default function Dashboard() {
-  const liveCalls = mockCalls.filter(c => c.status === 'in-progress' || c.status === 'ringing');
-  const activeCampaigns = mockCampaigns.filter(c => c.status === 'active');
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [calls, setCalls] = useState<Call[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [statsRes, callsRes, campaignsRes] = await Promise.all([
+          fetch('/api/analytics/stats'),
+          fetch('/api/calls'),
+          fetch('/api/campaigns'),
+        ]);
+
+        if (statsRes.ok) setStats(await statsRes.json());
+        if (callsRes.ok) {
+          const data = await callsRes.json();
+          setCalls(data.calls || []);
+        }
+        if (campaignsRes.ok) {
+          const data = await campaignsRes.json();
+          setCampaigns(data.campaigns || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  const liveCalls = calls.filter(c => c.status === 'in-progress' || c.status === 'ringing');
+  const activeCampaigns = campaigns.filter(c => c.status === 'active').slice(0, 5);
+  const recentCalls = calls.slice(0, 5);
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -51,13 +86,41 @@ export default function Dashboard() {
 
         <main style={{ flex: 1, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--bg)' }}>
 
+          {/* Stat Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-            <StatCard label="Calls Today" value={formatNumber(mockStats.totalCallsToday)} change={mockStats.callsChange} icon={<Phone size={18} color="#0AB4F5" />} iconBg="rgba(10,180,245,0.12)" sub="vs yesterday" />
-            <StatCard label="Active Right Now" value={mockStats.activeCallsNow.toString()} icon={<Activity size={18} color="#22c55e" />} iconBg="rgba(34,197,94,0.12)" sub="live calls in progress" />
-            <StatCard label="Conversion Rate" value={formatPercent(mockStats.conversionRate)} change={mockStats.conversionChange} icon={<TrendingUp size={18} color="#f59e0b" />} iconBg="rgba(245,158,11,0.12)" sub="calls converted" />
-            <StatCard label="Avg Duration" value={formatDuration(mockStats.avgCallDuration)} icon={<Clock size={18} color="#06b6d4" />} iconBg="rgba(6,182,212,0.12)" sub="per completed call" />
+            <StatCard 
+              label="Calls Today" 
+              value={formatNumber(stats?.totalCallsToday || 0)} 
+              change={stats?.callsChange} 
+              icon={<Phone size={18} color="#0AB4F5" />} 
+              iconBg="rgba(10,180,245,0.12)" 
+              sub="vs yesterday" 
+            />
+            <StatCard 
+              label="Active Right Now" 
+              value={(stats?.activeCallsNow || 0).toString()} 
+              icon={<Activity size={18} color="#22c55e" />} 
+              iconBg="rgba(34,197,94,0.12)" 
+              sub="live calls in progress" 
+            />
+            <StatCard 
+              label="Conversion Rate" 
+              value={formatPercent(stats?.conversionRate || 0)} 
+              change={stats?.conversionChange} 
+              icon={<TrendingUp size={18} color="#f59e0b" />} 
+              iconBg="rgba(245,158,11,0.12)" 
+              sub="calls converted" 
+            />
+            <StatCard 
+              label="Avg Duration" 
+              value={formatDuration(stats?.avgCallDuration || 0)} 
+              icon={<Clock size={18} color="#06b6d4" />} 
+              iconBg="rgba(6,182,212,0.12)" 
+              sub="per completed call" 
+            />
           </div>
 
+          {/* Charts Row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -95,6 +158,7 @@ export default function Dashboard() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+            {/* Active Campaigns */}
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div style={{ fontWeight: 600 }}>Active Campaigns</div>
@@ -103,7 +167,7 @@ export default function Dashboard() {
               <table className="table">
                 <thead><tr><th>Campaign</th><th>Agent</th><th>Progress</th><th>Conv.</th><th></th></tr></thead>
                 <tbody>
-                  {activeCampaigns.map(c => {
+                  {activeCampaigns.length > 0 ? activeCampaigns.map(c => {
                     const pct = Math.round((c.called / c.totalContacts) * 100);
                     const cv = c.called > 0 ? ((c.converted / c.called) * 100).toFixed(1) : '0';
                     return (
@@ -120,10 +184,14 @@ export default function Dashboard() {
                         <td><button className="btn btn-ghost btn-sm"><PauseCircle size={13} /></button></td>
                       </tr>
                     );
-                  })}
+                  }) : (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--text3)', fontSize: 13 }}>No active campaigns</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {/* Live Calls Feed */}
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontWeight: 600 }}>Live Calls</div>
@@ -133,9 +201,86 @@ export default function Dashboard() {
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', maxHeight: 340 }}>
-                {liveCalls.map(c => <LiveCallCard key={c.id} call={c} />)}
+                {liveCalls.length > 0 ? liveCalls.map(c => <LiveCallCard key={c.id} call={c} />) : (
+                  <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text3)', fontSize: 12 }}>No live calls at the moment</div>
+                )}
               </div>
               <a href="/calls" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', textAlign: 'center', fontWeight: 500 }}>View all →</a>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+            {[
+              { label: 'New Agent', icon: Bot, href: '/agents', color: 'var(--accent)' },
+              { label: 'Upload Contacts', icon: User, href: '/campaigns', color: 'var(--green)' },
+              { label: 'View Analytics', icon: TrendingUp, href: '/analytics', color: 'var(--amber)' },
+              { label: 'Buy Minutes', icon: CreditCard, href: '/billing', color: 'var(--red)' },
+            ].map(a => (
+              <a key={a.label} href={a.href} className="card" style={{ 
+                display: 'flex', alignItems: 'center', gap: 12, padding: '16px', 
+                textDecoration: 'none', transition: 'transform 0.15s, border-color 0.15s',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
+                (e.currentTarget as HTMLElement).style.borderColor = a.color;
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+              }}
+              >
+                <div style={{ 
+                  width: 32, height: 32, borderRadius: 8, background: 'var(--bg3)', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                }}>
+                  <a.icon size={16} color={a.color} />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{a.label}</div>
+              </a>
+            ))}
+          </div>
+
+          {/* New Recent Activity Section */}
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontWeight: 600 }}>Recent Activity</div>
+              <button className="btn btn-ghost btn-sm">Refresh</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {recentCalls.length > 0 ? recentCalls.map((c, i) => (
+                <div key={c.id} style={{ 
+                  display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0',
+                  borderBottom: i === recentCalls.length - 1 ? 'none' : '1px solid var(--border)' 
+                }}>
+                  <div style={{ 
+                    width: 36, height: 36, borderRadius: '50%', 
+                    background: c.converted ? 'var(--green-soft)' : 'var(--bg3)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    {c.converted ? <TrendingUp size={16} color="var(--green)" /> : <User size={16} color="var(--text3)" />}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>
+                      Call with <span style={{ fontWeight: 600 }}>{c.contactName}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                      {c.campaignName} · Agent: {c.agentName}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: c.converted ? 'var(--green)' : 'var(--text)' }}>
+                      {c.converted ? 'Converted' : c.status.charAt(0).toUpperCase() + c.status.slice(1)}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                      {c.duration > 0 ? formatDuration(c.duration) : 'Just now'}
+                    </div>
+                  </div>
+                  <ChevronRight size={16} color="var(--text3)" />
+                </div>
+              )) : (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text3)', fontSize: 13 }}>No recent activity</div>
+              )}
             </div>
           </div>
 
