@@ -2,13 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
+/**
+ * Campaign contacts API.
+ *
+ * Note on the route signature: Next.js 16 made dynamic-route params async.
+ * `context.params` is now a Promise that must be awaited inside the handler.
+ * Old shape: `{ params }: { params: { id: string } }`           (Next.js 14)
+ * New shape: `context: { params: Promise<{ id: string }> }`     (Next.js 15+)
+ */
+
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
 // Helper to get campaign contacts
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, context: RouteContext) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const campaignId = params.id;
+    const { id: campaignId } = await context.params;
 
     if (!supabaseAdmin) {
       // Mock data for demo if db is not connected
@@ -36,12 +49,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // Bulk insert contacts
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, context: RouteContext) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const campaignId = params.id;
+    const { id: campaignId } = await context.params;
     const body = await req.json();
     const { contacts } = body;
 
