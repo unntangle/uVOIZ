@@ -16,16 +16,24 @@ CREATE TABLE IF NOT EXISTS organizations (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Users (staff of the BPO company)
+-- Users (staff of the BPO company OR Unntangle super admins)
+-- Roles:
+--   super_admin → Unntangle staff (you). org_id may be NULL or a special internal org.
+--   admin       → BPO owner. Full access within their org including billing & team mgmt.
+--   manager     → BPO operations lead. Can run campaigns but no billing/team mgmt.
 CREATE TABLE IF NOT EXISTS users (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   name TEXT NOT NULL,
-  role TEXT DEFAULT 'admin' CHECK (role IN ('admin', 'manager', 'agent')),
+  role TEXT DEFAULT 'admin' CHECK (role IN ('super_admin', 'admin', 'manager')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration helper: if you already have rows with role='agent', convert them to 'manager'
+-- (uVOIZ is AI telecalling — there are no human agents, only AI bots)
+-- UPDATE users SET role = 'manager' WHERE role = 'agent';
 
 -- AI Agents
 CREATE TABLE IF NOT EXISTS agents (

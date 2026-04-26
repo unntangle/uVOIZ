@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createToken, sessionCookieOptions } from '@/lib/auth';
 
-// Demo credentials — change these after Supabase is set up
+/**
+ * Demo / bootstrap credentials.
+ *
+ * SECURITY NOTE: Set these in `.env.local`. Hardcoded fallbacks below are
+ * for local dev convenience only. Once Supabase users exist with
+ * role='super_admin', this list becomes unnecessary — delete it.
+ */
+const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || 'gokul@unntangle.com').toLowerCase();
+const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || 'Masteradmin@!23';
+
 const DEMO_USERS = [
+  // Unntangle Super Admin (you)
+  {
+    email: SUPER_ADMIN_EMAIL,
+    password: SUPER_ADMIN_PASSWORD,
+    user: {
+      id: 'demo-superadmin-1',
+      email: SUPER_ADMIN_EMAIL,
+      name: 'Gokul Sridharan',
+      orgId: 'unntangle-internal',
+      orgName: 'Unntangle',
+      plan: 'internal',
+      role: 'super_admin' as const,
+    },
+  },
+  // Legacy BPO demo admin (kept for backward compatibility — remove later)
   {
     email: 'admin@uvoiz.com',
     password: 'admin123',
@@ -13,7 +37,7 @@ const DEMO_USERS = [
       orgId: 'demo-org-1',
       orgName: 'uVOIZ',
       plan: 'pro',
-      role: 'admin',
+      role: 'admin' as const,
     },
   },
 ];

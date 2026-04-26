@@ -43,6 +43,29 @@ body {
   overflow-x: hidden;
 }
 
+/* Force Inter on all form controls and their placeholders.
+   Browsers do NOT inherit font-family for <input>, <textarea>, <select>
+   or for ::placeholder pseudo-elements by default — so we set it explicitly. */
+input,
+textarea,
+select,
+button {
+  font-family: 'Inter', sans-serif;
+}
+input::placeholder,
+textarea::placeholder {
+  font-family: 'Inter', sans-serif;
+  color: #a1a1aa;
+  opacity: 1; /* Firefox lowers placeholder opacity by default */
+}
+/* Vendor-prefixed placeholders (older browsers / Edge) */
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder { font-family: 'Inter', sans-serif; color: #a1a1aa; }
+input::-moz-placeholder,
+textarea::-moz-placeholder { font-family: 'Inter', sans-serif; color: #a1a1aa; opacity: 1; }
+input:-ms-input-placeholder,
+textarea:-ms-input-placeholder { font-family: 'Inter', sans-serif; color: #a1a1aa; }
+
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }

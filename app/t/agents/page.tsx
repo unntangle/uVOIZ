@@ -70,11 +70,11 @@ export default function Agents() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/agents" />
+      <Sidebar active="/t/agents" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Topbar crumbs={[
-          { label: 'Dashboard', href: '/dashboard' }, 
-          { label: 'AI Agents', href: showNew ? '/agents' : undefined, onClick: showNew ? () => setShowNew(false) : undefined },
+          { label: 'Dashboard', href: '/t/dashboard' }, 
+          { label: 'AI Agents', href: showNew ? '/t/agents' : undefined, onClick: showNew ? () => setShowNew(false) : undefined },
           ...(showNew ? [{ label: 'New Agent' }] : [])
         ]} />
 

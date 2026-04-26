@@ -40,9 +40,9 @@ export default function Calls() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/calls" />
+      <Sidebar active="/t/calls" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Live Calls' }]} />
+        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Live Calls' }]} />
 
         <PageHeader
           title="Live Calls"

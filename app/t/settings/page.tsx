@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
-import { Key, Phone, Bell, Shield, Globe, Save, Users, Mail, ShieldCheck, MoreVertical, Plus } from 'lucide-react';
+import { Key, Phone, Bell, Shield, Globe, Save } from 'lucide-react';
 
 function SettingsContent() {
   const searchParams = useSearchParams();
@@ -21,24 +21,17 @@ function SettingsContent() {
 
   const TABS = [
     { id: 'api', label: 'API Keys', icon: Key },
-    { id: 'members', label: 'Workspace Members', icon: Users },
     { id: 'telephony', label: 'Telephony', icon: Phone },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'compliance', label: 'Compliance', icon: Shield },
     { id: 'languages', label: 'Languages', icon: Globe },
   ];
 
-  const MOCK_MEMBERS = [
-    { id: 1, name: 'Gokul Sridharan', email: 'gokul@uvoiz.com', role: 'Owner', status: 'Active' },
-    { id: 2, name: 'Sarah Chen', email: 'sarah@uvoiz.com', role: 'Admin', status: 'Active' },
-    { id: 3, name: 'Alex Kumar', email: 'alex@uvoiz.com', role: 'Member', status: 'Invited' },
-  ];
-
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/settings" />
+      <Sidebar active="/t/settings" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Settings' }]} />
+        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Settings' }]} />
 
         <PageHeader
           title="Settings"
@@ -92,58 +85,6 @@ function SettingsContent() {
                     ))}
                   </div>
                 </>
-              )}
-
-              {activeTab === 'members' && (
-                <div className="card" style={{ padding: 0 }}>
-                  <div style={{ padding: 20, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Workspace Members</h3>
-                      <p style={{ fontSize: 13, color: 'var(--text3)' }}>Manage who has access to this workspace</p>
-                    </div>
-                    <button className="btn btn-primary btn-sm">
-                      <Plus size={14} /> Invite Member
-                    </button>
-                  </div>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr>
-                          <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text3)', borderBottom: '1px solid var(--border)' }}>Member</th>
-                          <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text3)', borderBottom: '1px solid var(--border)' }}>Role</th>
-                          <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text3)', borderBottom: '1px solid var(--border)' }}>Status</th>
-                          <th style={{ textAlign: 'right', padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text3)', borderBottom: '1px solid var(--border)' }}></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {MOCK_MEMBERS.map(m => (
-                          <tr key={m.id}>
-                            <td style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--accent-soft)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                                  {m.name.charAt(0)}
-                                </div>
-                                <div>
-                                  <div style={{ fontSize: 14, fontWeight: 600 }}>{m.name}</div>
-                                  <div style={{ fontSize: 12, color: 'var(--text3)' }}>{m.email}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                              <span className="badge badge-gray">{m.role}</span>
-                            </td>
-                            <td style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                              <span className={`badge ${m.status === 'Active' ? 'badge-green' : 'badge-amber'}`}>{m.status}</span>
-                            </td>
-                            <td style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
-                              <button style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer' }}><MoreVertical size={16} /></button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
               )}
 
               {activeTab === 'telephony' && (

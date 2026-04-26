@@ -49,8 +49,8 @@ function useCounter(target: number, duration: number = 2000) {
 
 export default function Login() {
   const router = useRouter();
-  const [email, setEmail] = useState('admin@uvoiz.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -99,7 +99,7 @@ export default function Login() {
         return;
       }
 
-      router.push('/dashboard');
+      router.push(data.user?.role === 'super_admin' ? '/console' : '/t/dashboard');
       router.refresh();
     } catch {
       setError('Network error. Please try again.');
@@ -158,25 +158,6 @@ export default function Login() {
             Welcome back. Enter your credentials to continue.
           </p>
 
-          {/* Demo credentials */}
-          <div style={{
-            background: 'rgba(10,180,245,0.08)',
-            border: '1px solid rgba(10,180,245,0.2)',
-            borderRadius: 10,
-            padding: '10px 14px',
-            marginBottom: 24,
-            fontSize: 12,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-              <span style={{ color: 'var(--text3)', fontWeight: 500 }}>Demo email</span>
-              <span className="mono" style={{ color: 'var(--text2)' }}>admin@uvoiz.com</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text3)', fontWeight: 500 }}>Demo password</span>
-              <span className="mono" style={{ color: 'var(--text2)' }}>admin123</span>
-            </div>
-          </div>
-
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8, color: 'var(--text)' }}>
@@ -218,7 +199,7 @@ export default function Login() {
                   onClick={() => setShowPassword(!showPassword)}
                   style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center' }}
                 >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {showPassword ? <Eye size={15} /> : <EyeOff size={15} />}
                 </button>
               </div>
             </div>

@@ -67,9 +67,9 @@ export default function Analytics() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/analytics" />
+      <Sidebar active="/t/analytics" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Analytics' }]} />
+        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Analytics' }]} />
 
         <PageHeader
           title="Analytics"

@@ -5,8 +5,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
-    // For demo/development, allow admin@uvoiz.com or explicit superadmin role
-    if (!session || (session.email !== 'admin@uvoiz.com' && session.role !== 'superadmin')) {
+    // Allow super_admin role (or legacy admin@uvoiz.com demo account)
+    if (!session || (session.email !== 'admin@uvoiz.com' && session.role !== 'super_admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

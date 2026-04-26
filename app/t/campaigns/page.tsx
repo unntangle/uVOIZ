@@ -4,7 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { PlayCircle, PauseCircle, MoreVertical, Plus, Search, Megaphone, Loader2 } from 'lucide-react';
-import { Campaign } from '@/types';
+import { Campaign, Agent } from '@/types';
 
 const STATUS_BADGE: Record<string, string> = {
   active: 'badge-green', paused: 'badge-amber', draft: 'badge-gray', completed: 'badge-cyan',
@@ -159,11 +159,11 @@ export default function Campaigns() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/campaigns" />
+      <Sidebar active="/t/campaigns" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Topbar crumbs={[
-          { label: 'Dashboard', href: '/dashboard' }, 
-          { label: 'Campaigns', href: (showNew || selectedCampaign) ? '/campaigns' : undefined, onClick: (showNew || selectedCampaign) ? () => { setShowNew(false); setSelectedCampaign(null); } : undefined },
+          { label: 'Dashboard', href: '/t/dashboard' }, 
+          { label: 'Campaigns', href: (showNew || selectedCampaign) ? '/t/campaigns' : undefined, onClick: (showNew || selectedCampaign) ? () => { setShowNew(false); setSelectedCampaign(null); } : undefined },
           ...(showNew ? [{ label: 'New Campaign' }] : []),
           ...(selectedCampaign ? [{ label: selectedCampaign.name }] : [])
         ]} />

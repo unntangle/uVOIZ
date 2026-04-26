@@ -3,17 +3,21 @@ import { registerUser, createToken, sessionCookieOptions } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, companyName } = await req.json();
+    const { email, password } = await req.json();
 
-    if (!email || !password || !companyName) {
-      return NextResponse.json({ error: 'All fields are required.' }, { status: 400 });
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
     }
 
     if (password.length < 8) {
       return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
     }
 
-    const { user, error } = await registerUser(email, password, companyName);
+    // Use email prefix as a temporary org placeholder.
+    // The real company name is collected during onboarding.
+    const placeholderOrgName = email.split('@')[0] || 'My BPO';
+
+    const { user, error } = await registerUser(email, password, placeholderOrgName);
     if (error || !user) {
       return NextResponse.json({ error: error || 'Registration failed.' }, { status: 400 });
     }

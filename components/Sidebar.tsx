@@ -1,28 +1,25 @@
 "use client";
-import { LayoutDashboard, Phone, Megaphone, Bot, BarChart3, Settings, CreditCard, Users, Key, HelpCircle, LogOut } from 'lucide-react';
-import { useState } from 'react';
+import {
+  LayoutDashboard, Phone, Megaphone, Bot, BarChart3, Settings, CreditCard,
+  Users, HelpCircle, LogOut
+} from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { BPO_NAV, BPO_NAV_GENERAL, filterNavByRole, type Role, type NavItem } from '@/lib/permissions';
 
-const NAV_MAIN = [
-  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-  { icon: Bot, label: 'AI Agents', href: '/agents' },
-  { icon: Megaphone, label: 'Campaigns', href: '/campaigns' },
-  { icon: Phone, label: 'Live Calls', href: '/calls', badge: '47' },
-  { icon: BarChart3, label: 'Analytics', href: '/analytics' },
-  { icon: CreditCard, label: 'Billing', href: '/billing' },
-];
-
-const NAV_MORE = [
-  { icon: Settings, label: 'Settings', href: '/settings' },
-  { icon: HelpCircle, label: 'Contact Us', href: '/contact' },
-];
+const ICON_MAP: Record<string, any> = {
+  LayoutDashboard, Phone, Megaphone, Bot, BarChart3, Settings, CreditCard,
+  Users, HelpCircle,
+};
 
 interface SidebarProps {
   active: string;
   orgName?: string;
   userName?: string;
   userEmail?: string;
+  /** Optional role override; otherwise read from /api/auth/me */
+  role?: Role;
 }
 
 export default function Sidebar({
@@ -30,9 +27,31 @@ export default function Sidebar({
   orgName = 'My BPO Company',
   userName = 'Admin',
   userEmail = 'admin@uvoiz.com',
+  role: roleProp,
 }: SidebarProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [role, setRole] = useState<Role | null>(roleProp ?? null);
+  const [meta, setMeta] = useState({ orgName, userName, userEmail });
+
+  // Hydrate session info if not provided
+  useEffect(() => {
+    if (roleProp) return;
+    let cancelled = false;
+    fetch('/api/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data?.user) return;
+        setRole(data.user.role as Role);
+        setMeta({
+          orgName: data.user.orgName || orgName,
+          userName: data.user.name || userName,
+          userEmail: data.user.email || userEmail,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [roleProp, orgName, userName, userEmail]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -41,6 +60,9 @@ export default function Sidebar({
     router.refresh();
   };
 
+  const mainItems = filterNavByRole(BPO_NAV, role);
+  const generalItems = filterNavByRole(BPO_NAV_GENERAL, role);
+
   return (
     <aside style={{
       width: 220, flexShrink: 0,
@@ -48,9 +70,8 @@ export default function Sidebar({
       display: 'flex', flexDirection: 'column',
       height: '100vh', position: 'sticky', top: 0,
     }}>
-      {/* Logo + Workspace (stacked) */}
+      {/* Logo + Workspace */}
       <div style={{ padding: '14px 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {/* Logo row */}
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <div>
             <Image
@@ -74,9 +95,8 @@ export default function Sidebar({
             </div>
           </div>
         </div>
-        {/* Workspace row */}
         <button
-          title={orgName}
+          title={meta.orgName}
           style={{
             width: '100%', background: 'transparent', border: '1px solid var(--border)',
             borderRadius: 8, padding: '8px 10px',
@@ -89,40 +109,48 @@ export default function Sidebar({
         >
           <div style={{ flex: 1, textAlign: 'left', overflow: 'hidden', minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {orgName}
+              {meta.orgName}
             </div>
           </div>
         </button>
       </div>
 
-      {/* Nav */}
+      {/* Nav (role-filtered) */}
       <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 1, overflowY: 'auto' }}>
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', padding: '6px 10px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           Main Menu
         </div>
-        {NAV_MAIN.map(({ icon: Icon, label, href, badge }) => (
-          <a key={href} href={href} className={`nav-item ${active === href ? 'active' : ''}`}>
-            <Icon size={16} />
-            <span style={{ flex: 1 }}>{label}</span>
-            {badge && (
-              <span style={{
-                background: 'var(--green-soft)', color: 'var(--green)',
-                border: '1px solid #bbf7d0',
-                borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600,
-              }}>{badge}</span>
-            )}
-          </a>
-        ))}
+        {mainItems.map((item: NavItem) => {
+          const Icon = ICON_MAP[item.iconName];
+          const isActive = active === item.href;
+          return (
+            <a key={item.href} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`}>
+              {Icon && <Icon size={16} />}
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.badge && (
+                <span style={{
+                  background: 'var(--green-soft)', color: 'var(--green)',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600,
+                }}>{item.badge}</span>
+              )}
+            </a>
+          );
+        })}
 
         <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text3)', padding: '18px 10px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           General
         </div>
-        {NAV_MORE.map(({ icon: Icon, label, href }) => (
-          <a key={href} href={href} className={`nav-item ${active === href ? 'active' : ''}`}>
-            <Icon size={16} />
-            <span style={{ flex: 1 }}>{label}</span>
-          </a>
-        ))}
+        {generalItems.map((item: NavItem) => {
+          const Icon = ICON_MAP[item.iconName];
+          const isActive = active === item.href;
+          return (
+            <a key={item.href} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`}>
+              {Icon && <Icon size={16} />}
+              <span style={{ flex: 1 }}>{item.label}</span>
+            </a>
+          );
+        })}
       </nav>
 
       {/* User block */}
@@ -141,14 +169,14 @@ export default function Sidebar({
             color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 13, fontWeight: 700, flexShrink: 0,
           }}>
-            {userName.charAt(0).toUpperCase()}
+            {meta.userName.charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {userName}
+              {meta.userName}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {userEmail}
+              {meta.userEmail}
             </div>
           </div>
           <button

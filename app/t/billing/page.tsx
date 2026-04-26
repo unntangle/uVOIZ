@@ -103,9 +103,9 @@ export default function Billing() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/billing" />
+      <Sidebar active="/t/billing" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Billing' }]} />
+        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Billing' }]} />
 
         <PageHeader
           title="Billing & Plans"
