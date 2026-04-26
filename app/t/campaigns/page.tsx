@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { PlayCircle, PauseCircle, MoreVertical, Plus, Search, Megaphone, Loader2 } from 'lucide-react';
@@ -158,12 +157,10 @@ export default function Campaigns() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/campaigns" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[
-          { label: 'Dashboard', href: '/t/dashboard' }, 
-          { label: 'Campaigns', href: (showNew || selectedCampaign) ? '/t/campaigns' : undefined, onClick: (showNew || selectedCampaign) ? () => { setShowNew(false); setSelectedCampaign(null); } : undefined },
+    <>
+      <Topbar crumbs={[
+          { label: 'Dashboard', href: '/app/dashboard' }, 
+          { label: 'Campaigns', href: (showNew || selectedCampaign) ? '/app/campaigns' : undefined, onClick: (showNew || selectedCampaign) ? () => { setShowNew(false); setSelectedCampaign(null); } : undefined },
           ...(showNew ? [{ label: 'New Campaign' }] : []),
           ...(selectedCampaign ? [{ label: selectedCampaign.name }] : [])
         ]} />
@@ -436,8 +433,7 @@ export default function Campaigns() {
           )}
 
         </main>
-      </div>
-    </div>
+    </>
   );
 }
 

@@ -55,6 +55,20 @@ export async function getSessionFromRequest(req: NextRequest): Promise<SessionUs
 
 // ---- Cookie options ----
 export function sessionCookieOptions(token: string) {
+  // Cookie domain controls which hosts can read the session.
+  //
+  // In production, we want the cookie shared across all subdomains of
+  // unntangle.com (uvoiz.*, console.*, future umail.*, etc.) so a single
+  // sign-in works everywhere. Setting domain='.unntangle.com' (with the
+  // leading dot) achieves this.
+  //
+  // In local dev, we omit the domain attribute so the cookie stays host-only.
+  // Modern browsers share cookies between localhost and *.localhost when no
+  // domain is set, so this also works for cross-subdomain testing locally.
+  const cookieDomain = process.env.NODE_ENV === 'production'
+    ? (process.env.COOKIE_DOMAIN || '.unntangle.com')
+    : undefined;
+
   return {
     name: COOKIE_NAME,
     value: token,
@@ -63,6 +77,27 @@ export function sessionCookieOptions(token: string) {
     sameSite: 'lax' as const,
     maxAge: COOKIE_MAX_AGE,
     path: '/',
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
+  };
+}
+
+// ---- Cookie clear options (for logout) ----
+// Must mirror the original options (domain, path) for the browser to actually
+// remove the cookie. If domain mismatches, the browser keeps the original.
+export function clearSessionCookieOptions() {
+  const cookieDomain = process.env.NODE_ENV === 'production'
+    ? (process.env.COOKIE_DOMAIN || '.unntangle.com')
+    : undefined;
+
+  return {
+    name: COOKIE_NAME,
+    value: '',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: 0,
+    path: '/',
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   };
 }
 

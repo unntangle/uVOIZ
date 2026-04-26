@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { Building2, PhoneCall, Bot, DollarSign, Activity } from 'lucide-react';
+import { Building2, Phone, Bot, IndianRupee, Activity, Plus, Search, Users, ArrowRight, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import ConsoleTopbar from './ConsoleTopbar';
+import PageHeader from '@/components/PageHeader';
+import StatCard from '@/components/StatCard';
 
 interface GlobalStats {
   totalBPOs: number;
@@ -20,163 +24,278 @@ interface BPOClient {
   created_at: string;
 }
 
-export default function AdminDashboard() {
+const PLAN_BADGE: Record<string, string> = {
+  starter: 'badge-gray',
+  pro:     'badge-gray',
+  agency:  'badge-gray',
+};
+
+export default function ConsoleDashboard() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [orgs, setOrgs] = useState<BPOClient[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
-    async function loadData() {
+    let cancelled = false;
+    (async () => {
       try {
         const [statsRes, orgsRes] = await Promise.all([
           fetch('/api/admin/stats'),
-          fetch('/api/admin/orgs')
+          fetch('/api/admin/orgs'),
         ]);
-        
-        if (statsRes.ok) {
-          setStats(await statsRes.json());
-        }
-        if (orgsRes.ok) {
+        if (!cancelled && statsRes.ok) setStats(await statsRes.json());
+        if (!cancelled && orgsRes.ok) {
           const data = await orgsRes.json();
           setOrgs(data.orgs || []);
         }
       } catch (err) {
-        console.error("Failed to load admin data", err);
+        console.error('Failed to load console data:', err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    }
-    
-    loadData();
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  if (loading) {
-    return <div style={{ padding: 40, color: '#64748b' }}>Loading master dashboard...</div>;
-  }
+  const filteredOrgs = orgs.filter(o =>
+    o.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  // Format INR money — used for MRR card
+  const inr = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
   return (
-    <main style={{ padding: '32px 40px', overflowY: 'auto', flex: 1 }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>Global Overview</h1>
-        <p style={{ color: '#64748b', fontSize: 14 }}>Welcome back to the Unntangle Master Dashboard.</p>
-      </div>
+    <>
+      <ConsoleTopbar crumbs={[{ label: 'Global Overview' }]} />
 
-      {/* Stats Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, marginBottom: 40 }}>
-        <div style={{ background: '#fff', padding: 24, borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: '#eff6ff', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Building2 size={20} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total BPOs</div>
-          </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a' }}>{stats?.totalBPOs || 0}</div>
-        </div>
-
-        <div style={{ background: '#fff', padding: 24, borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: '#f0fdf4', color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={20} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Est. Monthly MRR</div>
-          </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a' }}>${stats?.revenueEstimate?.toLocaleString() || 0}</div>
-        </div>
-
-        <div style={{ background: '#fff', padding: 24, borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: '#fef2f2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Activity size={20} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Minutes Consumed</div>
-          </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a' }}>{stats?.totalMinutesUsed?.toLocaleString() || 0}</div>
-        </div>
-
-        <div style={{ background: '#fff', padding: 24, borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 8, background: '#fdf4ff', color: '#d946ef', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Bot size={20} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Global Agents</div>
-          </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#0f172a' }}>{stats?.totalAgents || 0}</div>
-        </div>
-      </div>
-
-      {/* Orgs Table */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>Active BPO Clients</h2>
-          <button style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-            + Add Client
+      <PageHeader
+        title="Global Overview"
+        subtitle="Operator view across every BPO on the Unntangle platform"
+        actions={
+          <button className="btn btn-primary btn-sm">
+            <Plus size={14} /> Add BPO Client
           </button>
+        }
+      />
+
+      <main style={{
+        flex: 1, padding: 24, overflowY: 'auto',
+        display: 'flex', flexDirection: 'column', gap: 20,
+        background: 'var(--bg)',
+      }}>
+
+        {/* Stat cards row — monochrome icons in console (operator mode) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          <StatCard
+            label="Total BPOs"
+            value={(stats?.totalBPOs || 0).toString()}
+            icon={<Building2 size={18} color="var(--text)" />}
+            iconBg="var(--bg3)"
+            sub="Active workspaces"
+          />
+          <StatCard
+            label="Estimated MRR"
+            value={inr(stats?.revenueEstimate || 0)}
+            icon={<IndianRupee size={18} color="var(--text)" />}
+            iconBg="var(--bg3)"
+            sub="Based on active plans"
+          />
+          <StatCard
+            label="Minutes Consumed"
+            value={(stats?.totalMinutesUsed || 0).toLocaleString('en-IN')}
+            icon={<Activity size={18} color="var(--text)" />}
+            iconBg="var(--bg3)"
+            sub="Across all BPOs this month"
+          />
+          <StatCard
+            label="AI Agents Deployed"
+            value={(stats?.totalAgents || 0).toString()}
+            icon={<Bot size={18} color="var(--text)" />}
+            iconBg="var(--bg3)"
+            sub="Live across the platform"
+          />
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '16px 24px', fontWeight: 500 }}>Client Name</th>
-                <th style={{ padding: '16px 24px', fontWeight: 500 }}>Plan</th>
-                <th style={{ padding: '16px 24px', fontWeight: 500 }}>Minutes Used</th>
-                <th style={{ padding: '16px 24px', fontWeight: 500 }}>Status</th>
-                <th style={{ padding: '16px 24px', fontWeight: 500 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orgs.map((org) => {
-                const limit = org.minutes_limit === 999999 ? '∞' : org.minutes_limit.toLocaleString();
-                const usagePercent = org.minutes_limit === 999999 ? 0 : Math.min(100, Math.round(((org.minutes_used || 0) / org.minutes_limit) * 100));
-                
-                return (
-                  <tr key={org.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '16px 24px' }}>
-                      <div style={{ fontWeight: 500, color: '#0f172a' }}>{org.name}</div>
-                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>ID: {org.id.slice(0, 8)}...</div>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <span style={{ 
-                        background: '#f1f5f9', color: '#475569', padding: '4px 10px', 
-                        borderRadius: 999, fontSize: 12, fontWeight: 500, textTransform: 'capitalize' 
-                      }}>
-                        {org.plan}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ flex: 1, height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${usagePercent}%`, height: '100%', background: usagePercent > 90 ? '#ef4444' : '#3b82f6' }} />
-                        </div>
-                        <div style={{ fontSize: 13, color: '#475569', minWidth: 60 }}>
-                          {org.minutes_used?.toLocaleString() || 0} / {limit}
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#16a34a', fontSize: 13, fontWeight: 500 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
-                        Active
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 24px' }}>
-                      <button style={{ background: 'none', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13, color: '#475569', fontWeight: 500 }}>
-                        Manage
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {orgs.length === 0 && (
+
+        {/* Active BPO Clients */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '16px 20px', borderBottom: '1px solid var(--border)',
+            gap: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>Active BPO Clients</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                  {orgs.length} total · {filteredOrgs.length} shown
+                </div>
+              </div>
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <Search
+                size={13}
+                style={{
+                  position: 'absolute', left: 11, top: '50%',
+                  transform: 'translateY(-50%)', color: 'var(--text3)',
+                }}
+              />
+              <input
+                className="input"
+                placeholder="Search clients..."
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                style={{ width: 240, paddingLeft: 32, height: 36, fontSize: 13 }}
+              />
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{
+              padding: '60px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--text3)', fontSize: 13,
+            }}>
+              <Loader2 size={18} style={{ animation: 'spin 0.8s linear infinite', marginRight: 10 }} />
+              Loading clients...
+            </div>
+          ) : filteredOrgs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text3)' }}>
+              <Users size={28} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
+              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text2)' }}>
+                {query ? 'No matches found' : 'No BPO clients yet'}
+              </div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>
+                {query ? 'Try a different search' : 'Clients will appear here once they sign up'}
+              </div>
+            </div>
+          ) : (
+            <table className="table">
+              <thead>
                 <tr>
-                  <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-                    No BPO clients found.
-                  </td>
+                  <th>Client</th>
+                  <th>Plan</th>
+                  <th>Minutes Usage</th>
+                  <th>Status</th>
+                  <th style={{ width: 120 }}>Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredOrgs.map(org => {
+                  const limitDisplay = org.minutes_limit === 999999
+                    ? '∞'
+                    : org.minutes_limit.toLocaleString('en-IN');
+                  const pct = org.minutes_limit === 999999
+                    ? 0
+                    : Math.min(100, Math.round(((org.minutes_used || 0) / org.minutes_limit) * 100));
+                  const planClass = PLAN_BADGE[org.plan] || 'badge-gray';
+
+                  return (
+                    <tr key={org.id}>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text)' }}>{org.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2, fontFamily: 'monospace' }}>
+                          {org.id.slice(0, 8)}…
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`badge ${planClass}`} style={{ textTransform: 'capitalize' }}>
+                          {org.plan}
+                        </span>
+                      </td>
+                      <td style={{ width: 240 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div className="progress" style={{ flex: 1 }}>
+                            <div
+                              className="progress-fill"
+                              style={{
+                                width: `${pct}%`,
+                                /* In monochrome console, only flag overruns —
+                                   normal usage stays neutral grey. */
+                                background: pct > 90 ? 'var(--red)'
+                                          : pct > 70 ? 'var(--amber)'
+                                          : 'var(--text2)',
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                            {(org.minutes_used || 0).toLocaleString('en-IN')} / {limitDisplay}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontSize: 12, fontWeight: 600, color: 'var(--green)',
+                        }}>
+                          <div className="live-dot" />
+                          Active
+                        </span>
+                      </td>
+                      <td>
+                        <Link
+                          href={`/clients/${org.id}`}
+                          className="btn btn-ghost btn-sm"
+                          style={{ textDecoration: 'none' }}
+                        >
+                          Manage <ArrowRight size={12} />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
-      </div>
-    </main>
+
+        {/* Quick links — monochrome to match the rest of the operator surface */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          {[
+            { label: 'BPO Clients',      href: '/clients', icon: Users },
+            { label: 'Platform Billing', href: '/billing', icon: IndianRupee },
+            { label: 'System Health',    href: '/health',  icon: Activity },
+            { label: 'Active Calls',     href: '/clients', icon: Phone },
+          ].map(q => {
+            const QIcon = q.icon;
+            return (
+              <Link
+                key={q.label}
+                href={q.href}
+                className="card"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '16px',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  transition: 'transform 0.15s, border-color 0.15s',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)';
+                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--border2)';
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+                  (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+                }}
+              >
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: 'var(--bg3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <QIcon size={16} color="var(--text)" />
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                  {q.label}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+      </main>
+    </>
   );
 }

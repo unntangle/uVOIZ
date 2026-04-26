@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { Bot, Phone, TrendingUp, Clock, Plus, Search, MoreVertical, Play, Loader2 } from 'lucide-react';
@@ -69,12 +68,10 @@ export default function Agents() {
     .filter(a => a.name.toLowerCase().includes(query.toLowerCase()));
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/agents" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[
-          { label: 'Dashboard', href: '/t/dashboard' }, 
-          { label: 'AI Agents', href: showNew ? '/t/agents' : undefined, onClick: showNew ? () => setShowNew(false) : undefined },
+    <>
+      <Topbar crumbs={[
+          { label: 'Dashboard', href: '/app/dashboard' }, 
+          { label: 'AI Agents', href: showNew ? '/app/agents' : undefined, onClick: showNew ? () => setShowNew(false) : undefined },
           ...(showNew ? [{ label: 'New Agent' }] : [])
         ]} />
 
@@ -192,8 +189,7 @@ export default function Agents() {
           )}
 
         </main>
-      </div>
-    </div>
+    </>
   );
 }
 

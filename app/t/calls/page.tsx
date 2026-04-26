@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { Download, Play, Filter } from 'lucide-react';
@@ -39,10 +38,8 @@ export default function Calls() {
   const liveCount = calls.filter(c => c.status === 'in-progress').length;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/calls" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Live Calls' }]} />
+    <>
+      <Topbar crumbs={[{ label: 'Dashboard', href: '/app/dashboard' }, { label: 'Live Calls' }]} />
 
         <PageHeader
           title="Live Calls"
@@ -135,7 +132,6 @@ export default function Calls() {
           </div>
 
         </main>
-      </div>
-    </div>
+    </>
   );
 }

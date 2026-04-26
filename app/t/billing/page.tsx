@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { Check, Zap, Building2, Rocket, Loader2 } from 'lucide-react';
@@ -27,12 +26,20 @@ export default function Billing() {
   const [org, setOrg] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/onboarding')
-      .then(res => res.json())
-      .then(data => {
-        if (data.org) setOrg(data.org);
-      })
-      .catch(err => console.error('Failed to fetch org:', err));
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/onboarding');
+        if (!res.ok) return; // 401, 500, etc. — keep org as null, UI shows defaults
+        const text = await res.text();
+        if (!text) return; // empty body — don't try to parse
+        const data = JSON.parse(text);
+        if (!cancelled && data.org) setOrg(data.org);
+      } catch (err) {
+        console.error('Failed to fetch org:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const handleUpgrade = async (planId: string, planPrice: number) => {
@@ -102,10 +109,8 @@ export default function Billing() {
   const minutePct = Math.min(100, (minutesUsed / minutesLimit) * 100);
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/billing" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Billing' }]} />
+    <>
+      <Topbar crumbs={[{ label: 'Dashboard', href: '/app/dashboard' }, { label: 'Billing' }]} />
 
         <PageHeader
           title="Billing & Plans"
@@ -221,7 +226,6 @@ export default function Billing() {
           </div>
 
         </main>
-      </div>
-    </div>
+    </>
   );
 }

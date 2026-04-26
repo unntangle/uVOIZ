@@ -2,6 +2,18 @@
  * Centralized role-based access control for uVOIZ.
  * Single source of truth — middleware AND sidebar both read from here.
  *
+ * URL CONVENTION:
+ *   User-facing URLs use clean subdomain paths:
+ *     uvoiz.unntangle.com/app/dashboard   (BPO app)
+ *     console.unntangle.com/dashboard      (super admin console)
+ *
+ *   Internal (Next.js file structure) paths:
+ *     /t/dashboard, /t/agents, etc.        (BPO routes)
+ *     /console, /console/clients, etc.     (super admin routes)
+ *
+ *   middleware.ts rewrites between the two. Permission checks below run on
+ *   the INTERNAL paths so the file structure remains the source of truth.
+ *
  * ROLE HIERARCHY:
  *   super_admin  → Unntangle staff. Access to /console/* only.
  *   admin        → BPO owner. Access to /t/* including billing, team, settings.
@@ -34,6 +46,7 @@ export const ROUTE_PERMISSIONS: AppRoute[] = [
   { path: '/t/campaigns',            allowedRoles: ['admin', 'manager'] },
   { path: '/t/calls',                allowedRoles: ['admin', 'manager'] },
   { path: '/t/analytics',            allowedRoles: ['admin', 'manager'] },
+  { path: '/t/support',              allowedRoles: ['admin', 'manager'] },
   { path: '/t',                      allowedRoles: ['admin', 'manager'] }, // root /t redirect
 
   // ---------- Onboarding (any signed-in user) ----------
@@ -48,7 +61,6 @@ export const PUBLIC_ROUTES = [
   '/sign-up',
   '/forgot-password',
   '/reset-password',
-  '/contact',
   '/api/auth',
   '/api/webhooks',
 ];
@@ -69,6 +81,8 @@ export function canAccess(path: string, role: Role | null | undefined): boolean 
 
 /**
  * Where to send a user after they log in based on their role.
+ * Returns the INTERNAL path — the login page (which knows about subdomains)
+ * is responsible for converting to the right absolute URL via lib/urls.ts.
  */
 export function getDefaultLandingPath(role: Role): string {
   if (role === 'super_admin') return '/console';
@@ -77,7 +91,10 @@ export function getDefaultLandingPath(role: Role): string {
 
 /**
  * Sidebar nav items — filtered by role at render time.
- * label, href, allowedRoles. Icon is supplied by the consumer.
+ *
+ * `href` here is the USER-FACING url (what shows in the browser bar and
+ * what <Link> needs). Middleware rewrites these to internal paths before
+ * Next.js renders the corresponding `app/t/*` or `app/console/*` files.
  */
 export type NavItem = {
   label: string;
@@ -88,28 +105,28 @@ export type NavItem = {
 };
 
 export const BPO_NAV: NavItem[] = [
-  { label: 'Dashboard',  href: '/t/dashboard',  allowedRoles: ['admin', 'manager'], iconName: 'LayoutDashboard' },
-  { label: 'AI Agents',  href: '/t/agents',     allowedRoles: ['admin', 'manager'], iconName: 'Bot' },
-  { label: 'Campaigns',  href: '/t/campaigns',  allowedRoles: ['admin', 'manager'], iconName: 'Megaphone' },
-  { label: 'Live Calls', href: '/t/calls',      allowedRoles: ['admin', 'manager'], iconName: 'Phone' },
-  { label: 'Analytics',  href: '/t/analytics',  allowedRoles: ['admin', 'manager'], iconName: 'BarChart3' },
-  { label: 'Billing',    href: '/t/billing',    allowedRoles: ['admin'],            iconName: 'CreditCard' },
-  { label: 'Team',       href: '/t/team',       allowedRoles: ['admin'],            iconName: 'Users' },
+  { label: 'Dashboard',  href: '/app/dashboard',  allowedRoles: ['admin', 'manager'], iconName: 'LayoutDashboard' },
+  { label: 'AI Agents',  href: '/app/agents',     allowedRoles: ['admin', 'manager'], iconName: 'Bot' },
+  { label: 'Campaigns',  href: '/app/campaigns',  allowedRoles: ['admin', 'manager'], iconName: 'Megaphone' },
+  { label: 'Live Calls', href: '/app/calls',      allowedRoles: ['admin', 'manager'], iconName: 'Phone' },
+  { label: 'Analytics',  href: '/app/analytics',  allowedRoles: ['admin', 'manager'], iconName: 'BarChart3' },
+  { label: 'Billing',    href: '/app/billing',    allowedRoles: ['admin'],            iconName: 'CreditCard' },
+  { label: 'Team',       href: '/app/team',       allowedRoles: ['admin'],            iconName: 'Users' },
 ];
 
 export const BPO_NAV_GENERAL: NavItem[] = [
-  { label: 'Settings',   href: '/t/settings',   allowedRoles: ['admin'],            iconName: 'Settings' },
-  { label: 'Contact Us', href: '/contact',      allowedRoles: ['admin', 'manager'], iconName: 'HelpCircle' },
+  { label: 'Settings',        href: '/app/settings', allowedRoles: ['admin'],            iconName: 'Settings' },
+  { label: 'Help & Support',  href: '/app/support',  allowedRoles: ['admin', 'manager'], iconName: 'HelpCircle' },
 ];
 
 export const CONSOLE_NAV: NavItem[] = [
-  { label: 'Global Overview',  href: '/console',           allowedRoles: ['super_admin'], iconName: 'LayoutDashboard' },
-  { label: 'BPO Clients',      href: '/console/clients',   allowedRoles: ['super_admin'], iconName: 'Users' },
-  { label: 'Platform Billing', href: '/console/billing',   allowedRoles: ['super_admin'], iconName: 'CreditCard' },
-  { label: 'Credit Ledger',    href: '/console/credits',   allowedRoles: ['super_admin'], iconName: 'Coins' },
-  { label: 'System Health',    href: '/console/health',    allowedRoles: ['super_admin'], iconName: 'Server' },
-  { label: 'Security & Audit', href: '/console/audit',     allowedRoles: ['super_admin'], iconName: 'Shield' },
-  { label: 'Platform Settings',href: '/console/settings',  allowedRoles: ['super_admin'], iconName: 'Settings' },
+  { label: 'Global Overview',  href: '/dashboard',   allowedRoles: ['super_admin'], iconName: 'LayoutDashboard' },
+  { label: 'BPO Clients',      href: '/clients',     allowedRoles: ['super_admin'], iconName: 'Users' },
+  { label: 'Platform Billing', href: '/billing',     allowedRoles: ['super_admin'], iconName: 'CreditCard' },
+  { label: 'Credit Ledger',    href: '/credits',     allowedRoles: ['super_admin'], iconName: 'Coins' },
+  { label: 'System Health',    href: '/health',      allowedRoles: ['super_admin'], iconName: 'Server' },
+  { label: 'Security & Audit', href: '/audit',       allowedRoles: ['super_admin'], iconName: 'Shield' },
+  { label: 'Platform Settings',href: '/settings',    allowedRoles: ['super_admin'], iconName: 'Settings' },
 ];
 
 export function filterNavByRole(items: NavItem[], role: Role | null | undefined): NavItem[] {

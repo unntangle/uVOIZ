@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation';
 
 /**
- * /t → /t/dashboard
- * Catches users who land on the BPO root and sends them home.
+ * Internal /t → bounce to /app/dashboard (the user-facing URL).
+ * Reachable only if someone hits the internal path directly during dev.
+ * Middleware normally rewrites /app/* to /t/* so this redirect goes back
+ * the other way (using a client-visible path).
  */
 export default function TenantIndexPage() {
-  redirect('/t/dashboard');
+  redirect('/app/dashboard');
 }

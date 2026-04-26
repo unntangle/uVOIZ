@@ -1,6 +1,5 @@
 "use client";
 import { useState } from 'react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { Plus, MoreVertical, Mail, Shield, ShieldCheck, UserPlus } from 'lucide-react';
@@ -28,10 +27,8 @@ export default function TeamPage() {
   const [inviteRole, setInviteRole] = useState<'admin' | 'manager'>('manager');
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/team" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Team' }]} />
+    <>
+      <Topbar crumbs={[{ label: 'Dashboard', href: '/app/dashboard' }, { label: 'Team' }]} />
 
         <PageHeader
           title="Team"
@@ -123,7 +120,6 @@ export default function TeamPage() {
             </table>
           </div>
         </main>
-      </div>
 
       {/* Invite modal */}
       {showInvite && (
@@ -190,6 +186,6 @@ export default function TeamPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

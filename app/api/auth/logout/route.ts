@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server';
+import { clearSessionCookieOptions } from '@/lib/auth';
 
 export async function POST() {
   const response = NextResponse.json({ success: true });
-  response.cookies.set({
-    name: 'va_session',
-    value: '',
-    httpOnly: true,
-    expires: new Date(0),
-    path: '/',
-  });
+  // Clear the session cookie. Domain/path/secure flags must match the
+  // original cookie or the browser won't delete it.
+  response.cookies.set(clearSessionCookieOptions());
   return response;
 }

@@ -1,4 +1,7 @@
 "use client";
+import { Sparkles } from 'lucide-react';
+import ConsoleTopbar from './ConsoleTopbar';
+import PageHeader from '@/components/PageHeader';
 
 interface PlaceholderProps {
   title: string;
@@ -8,34 +11,63 @@ interface PlaceholderProps {
 
 /**
  * Generic "coming soon" placeholder for /console pages
- * that haven't been built out yet. Keeps nav links from 404'ing.
+ * that haven't been built out yet. Keeps nav links from 404'ing
+ * and gives the page a consistent look with the rest of the console.
  */
 export default function ConsolePlaceholder({ title, subtitle, description }: PlaceholderProps) {
   return (
-    <main style={{ padding: '32px 40px', overflowY: 'auto', flex: 1 }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>{title}</h1>
-        <p style={{ color: '#64748b', fontSize: 14 }}>{subtitle}</p>
-      </div>
+    <>
+      <ConsoleTopbar
+        crumbs={[
+          { label: 'Global Overview', href: '/dashboard' },
+          { label: title },
+        ]}
+      />
 
-      <div style={{
-        background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0',
-        padding: 48, textAlign: 'center',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+      <PageHeader title={title} subtitle={subtitle} />
+
+      <main style={{
+        flex: 1, padding: 24, overflowY: 'auto',
+        background: 'var(--bg)',
       }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: 12, margin: '0 auto 16px',
-          background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 24, fontWeight: 700,
-        }}>U</div>
-        <div style={{ fontSize: 18, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>
-          Coming soon
+        <div className="card" style={{
+          padding: 48,
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 16,
+        }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 14,
+            background: 'var(--accent-soft)',
+            border: '1px solid #bae6fd',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Sparkles size={26} color="var(--accent)" />
+          </div>
+
+          <div>
+            <div style={{
+              fontSize: 17, fontWeight: 700,
+              color: 'var(--text)',
+              marginBottom: 6,
+            }}>
+              Coming soon
+            </div>
+            <p style={{
+              color: 'var(--text3)', fontSize: 13,
+              maxWidth: 520, lineHeight: 1.6,
+            }}>
+              {description}
+            </p>
+          </div>
+
+          <span className="badge badge-purple" style={{ marginTop: 4 }}>
+            On the roadmap
+          </span>
         </div>
-        <p style={{ color: '#64748b', fontSize: 14, maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>
-          {description}
-        </p>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }

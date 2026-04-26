@@ -3,9 +3,10 @@ import {
   LayoutDashboard, Phone, Megaphone, Bot, BarChart3, Settings, CreditCard,
   Users, HelpCircle, LogOut
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
 import { BPO_NAV, BPO_NAV_GENERAL, filterNavByRole, type Role, type NavItem } from '@/lib/permissions';
 
 const ICON_MAP: Record<string, any> = {
@@ -15,43 +16,21 @@ const ICON_MAP: Record<string, any> = {
 
 interface SidebarProps {
   active: string;
-  orgName?: string;
-  userName?: string;
-  userEmail?: string;
-  /** Optional role override; otherwise read from /api/auth/me */
-  role?: Role;
+  orgName: string;
+  userName: string;
+  userEmail: string;
+  role: Role;
 }
 
 export default function Sidebar({
   active,
-  orgName = 'My BPO Company',
-  userName = 'Admin',
-  userEmail = 'admin@uvoiz.com',
-  role: roleProp,
+  orgName,
+  userName,
+  userEmail,
+  role,
 }: SidebarProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [role, setRole] = useState<Role | null>(roleProp ?? null);
-  const [meta, setMeta] = useState({ orgName, userName, userEmail });
-
-  // Hydrate session info if not provided
-  useEffect(() => {
-    if (roleProp) return;
-    let cancelled = false;
-    fetch('/api/auth/me')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled || !data?.user) return;
-        setRole(data.user.role as Role);
-        setMeta({
-          orgName: data.user.orgName || orgName,
-          userName: data.user.name || userName,
-          userEmail: data.user.email || userEmail,
-        });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [roleProp, orgName, userName, userEmail]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -66,7 +45,6 @@ export default function Sidebar({
   return (
     <aside style={{
       width: 220, flexShrink: 0,
-      background: 'var(--bg-sidebar)',
       display: 'flex', flexDirection: 'column',
       height: '100vh', position: 'sticky', top: 0,
     }}>
@@ -96,7 +74,7 @@ export default function Sidebar({
           </div>
         </div>
         <button
-          title={meta.orgName}
+          title={orgName}
           style={{
             width: '100%', background: 'transparent', border: '1px solid var(--border)',
             borderRadius: 8, padding: '8px 10px',
@@ -109,7 +87,7 @@ export default function Sidebar({
         >
           <div style={{ flex: 1, textAlign: 'left', overflow: 'hidden', minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {meta.orgName}
+              {orgName}
             </div>
           </div>
         </button>
@@ -124,7 +102,7 @@ export default function Sidebar({
           const Icon = ICON_MAP[item.iconName];
           const isActive = active === item.href;
           return (
-            <a key={item.href} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`}>
+            <Link key={item.href} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`} prefetch={true}>
               {Icon && <Icon size={16} />}
               <span style={{ flex: 1 }}>{item.label}</span>
               {item.badge && (
@@ -134,7 +112,7 @@ export default function Sidebar({
                   borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 600,
                 }}>{item.badge}</span>
               )}
-            </a>
+            </Link>
           );
         })}
 
@@ -145,10 +123,10 @@ export default function Sidebar({
           const Icon = ICON_MAP[item.iconName];
           const isActive = active === item.href;
           return (
-            <a key={item.href} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`}>
+            <Link key={item.href} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`} prefetch={true}>
               {Icon && <Icon size={16} />}
               <span style={{ flex: 1 }}>{item.label}</span>
-            </a>
+            </Link>
           );
         })}
       </nav>
@@ -169,14 +147,14 @@ export default function Sidebar({
             color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 13, fontWeight: 700, flexShrink: 0,
           }}>
-            {meta.userName.charAt(0).toUpperCase()}
+            {userName.charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {meta.userName}
+              {userName}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {meta.userEmail}
+              {userEmail}
             </div>
           </div>
           <button

@@ -3,6 +3,64 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createVapiAssistant } from '@/lib/vapi';
 
+/**
+ * GET /api/onboarding
+ * Returns the current user's organization data — used by the billing page
+ * (and others) to display org name, plan, minutes_used / minutes_limit, etc.
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const session = await getSessionFromRequest(req);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (!supabaseAdmin) {
+      // No DB configured (demo mode) — return what we have from the session
+      return NextResponse.json({
+        org: {
+          id: session.orgId,
+          name: session.orgName,
+          plan: session.plan,
+          minutes_used: 0,
+          minutes_limit: 1000,
+          phone: null,
+          industry: null,
+          languages: ['en'],
+          plan_deferred: false,
+        },
+      });
+    }
+
+    const { data: org, error } = await supabaseAdmin
+      .from('organizations')
+      .select('*')
+      .eq('id', session.orgId)
+      .single();
+
+    if (error || !org) {
+      // Org not found in DB (likely a demo user with no real org row).
+      // Return a synthesized record from the JWT session so the UI doesn't crash.
+      return NextResponse.json({
+        org: {
+          id: session.orgId,
+          name: session.orgName,
+          plan: session.plan,
+          minutes_used: 0,
+          minutes_limit: 1000,
+          phone: null,
+          industry: null,
+          languages: ['en'],
+          plan_deferred: false,
+        },
+      });
+    }
+
+    return NextResponse.json({ org });
+  } catch (err) {
+    console.error('GET /api/onboarding error:', err);
+    return NextResponse.json({ error: 'Failed to fetch organization' }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);

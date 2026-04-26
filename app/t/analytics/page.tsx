@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { mockWeeklyData, mockChartData } from '@/lib/mock-data';
@@ -66,10 +65,8 @@ export default function Analytics() {
   ];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/analytics" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Topbar crumbs={[{ label: 'Dashboard', href: '/t/dashboard' }, { label: 'Analytics' }]} />
+    <>
+      <Topbar crumbs={[{ label: 'Dashboard', href: '/app/dashboard' }, { label: 'Analytics' }]} />
 
         <PageHeader
           title="Analytics"
@@ -219,7 +216,6 @@ export default function Analytics() {
           </div>
 
         </main>
-      </div>
-    </div>
+    </>
   );
 }

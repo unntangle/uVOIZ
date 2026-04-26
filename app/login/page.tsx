@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Mail, Lock, Eye, EyeOff, Loader2, Phone, Check, Megaphone, Bot, Headphones, MessageCircle, Mic, Globe, Zap, Signal, PhoneCall } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { loginRedirectUrlForRole } from '@/lib/urls';
 
 // Testimonials — cycles through these
 const TESTIMONIALS = [
@@ -99,8 +100,19 @@ export default function Login() {
         return;
       }
 
-      router.push(data.user?.role === 'super_admin' ? '/console' : '/t/dashboard');
-      router.refresh();
+      // Redirect to the right subdomain based on role.
+      // Super admins → console.unntangle.com/dashboard
+      // BPO admins/managers → uvoiz.unntangle.com/app/dashboard
+      const destination = loginRedirectUrlForRole(data.user?.role || 'admin');
+
+      // If destination is on a different host, do a full navigation
+      // (router.push only works for same-origin URLs).
+      if (typeof window !== 'undefined' && destination.startsWith('http')) {
+        window.location.href = destination;
+      } else {
+        router.push(destination);
+        router.refresh();
+      }
     } catch {
       setError('Network error. Please try again.');
     } finally {

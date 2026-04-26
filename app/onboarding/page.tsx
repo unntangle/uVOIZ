@@ -65,9 +65,9 @@ export default function Onboarding() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      router.push('/t/dashboard');
+      router.push('/app/dashboard');
     } catch {
-      router.push('/t/dashboard');
+      router.push('/app/dashboard');
     }
   };
 

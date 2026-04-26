@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { Phone, TrendingUp, Clock, Activity, PauseCircle, Plus, Search, Calendar, ChevronRight, User, Bot, CreditCard } from 'lucide-react';
-import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import StatCard from '@/components/StatCard';
@@ -59,10 +58,8 @@ export default function Dashboard() {
   const recentCalls = calls.slice(0, 5);
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar active="/t/dashboard" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Topbar crumbs={[{ label: 'Dashboard' }]} />
+    <>
+      <Topbar crumbs={[{ label: 'Dashboard' }]} />
 
         <PageHeader
           title="Dashboard"
@@ -162,7 +159,7 @@ export default function Dashboard() {
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div style={{ fontWeight: 600 }}>Active Campaigns</div>
-                <a href="/t/campaigns" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>View all →</a>
+                <a href="/app/campaigns" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>View all →</a>
               </div>
               <table className="table">
                 <thead><tr><th>Campaign</th><th>Agent</th><th>Progress</th><th>Conv.</th><th></th></tr></thead>
@@ -205,16 +202,16 @@ export default function Dashboard() {
                   <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text3)', fontSize: 12 }}>No live calls at the moment</div>
                 )}
               </div>
-              <a href="/t/calls" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', textAlign: 'center', fontWeight: 500 }}>View all →</a>
+              <a href="/app/calls" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none', textAlign: 'center', fontWeight: 500 }}>View all →</a>
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
             {[
-              { label: 'New Agent', icon: Bot, href: '/t/agents', color: 'var(--accent)' },
-              { label: 'Upload Contacts', icon: User, href: '/t/campaigns', color: 'var(--green)' },
-              { label: 'View Analytics', icon: TrendingUp, href: '/t/analytics', color: 'var(--amber)' },
-              { label: 'Buy Minutes', icon: CreditCard, href: '/t/billing', color: 'var(--red)' },
+              { label: 'New Agent', icon: Bot, href: '/app/agents', color: 'var(--accent)' },
+              { label: 'Upload Contacts', icon: User, href: '/app/campaigns', color: 'var(--green)' },
+              { label: 'View Analytics', icon: TrendingUp, href: '/app/analytics', color: 'var(--amber)' },
+              { label: 'Buy Minutes', icon: CreditCard, href: '/app/billing', color: 'var(--red)' },
             ].map(a => (
               <a key={a.label} href={a.href} className="card" style={{ 
                 display: 'flex', alignItems: 'center', gap: 12, padding: '16px', 
@@ -285,7 +282,6 @@ export default function Dashboard() {
           </div>
 
         </main>
-      </div>
-    </div>
+    </>
   );
 }

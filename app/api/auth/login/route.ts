@@ -26,16 +26,16 @@ const DEMO_USERS = [
       role: 'super_admin' as const,
     },
   },
-  // Legacy BPO demo admin (kept for backward compatibility — remove later)
+  // V4U BPO demo admin
   {
-    email: 'admin@uvoiz.com',
+    email: 'admin@v4u.com',
     password: 'admin123',
     user: {
-      id: 'demo-user-1',
-      email: 'admin@uvoiz.com',
-      name: 'uVOIZ Admin',
-      orgId: 'demo-org-1',
-      orgName: 'uVOIZ',
+      id: 'demo-user-v4u',
+      email: 'admin@v4u.com',
+      name: 'V4U Admin',
+      orgId: 'demo-org-v4u',
+      orgName: 'V4U Financial Services',
       plan: 'pro',
       role: 'admin' as const,
     },
