@@ -3,12 +3,12 @@ import { redirect } from 'next/navigation';
 /**
  * Root index page handler.
  *
- * In production, users typically land on a specific subdomain
- * (uvoiz.unntangle.com or console.unntangle.com), and the middleware
- * routes them appropriately.
+ * In production, all users land on uvoiz.unntangle.com — the BPO product
+ * lives at /app/* and the super admin console at /console/*. The middleware
+ * handles role-based routing once authenticated.
  *
- * If someone hits the root domain with no subdomain — or localhost:3000
- * with no subdomain — we send them to login.
+ * Hitting "/" with no path means the visitor is unauthenticated or just
+ * arrived — send them to login.
  */
 export default function Root() {
   redirect('/login');

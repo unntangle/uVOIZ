@@ -2,17 +2,17 @@
  * Centralized role-based access control for uVOIZ.
  * Single source of truth — middleware AND sidebar both read from here.
  *
- * URL CONVENTION:
- *   User-facing URLs use clean subdomain paths:
- *     uvoiz.unntangle.com/app/dashboard   (BPO app)
- *     console.unntangle.com/dashboard      (super admin console)
+ * URL CONVENTION (single-subdomain layout):
+ *   User-facing URLs all live under uvoiz.unntangle.com:
+ *     uvoiz.unntangle.com/app/dashboard       (BPO app)
+ *     uvoiz.unntangle.com/console/dashboard   (super admin console)
  *
  *   Internal (Next.js file structure) paths:
- *     /t/dashboard, /t/agents, etc.        (BPO routes)
- *     /console, /console/clients, etc.     (super admin routes)
+ *     /t/dashboard, /t/agents, etc.        (BPO routes — rewritten by middleware)
+ *     /console, /console/clients, etc.     (super admin routes — no rewrite, files at app/console/*)
  *
- *   middleware.ts rewrites between the two. Permission checks below run on
- *   the INTERNAL paths so the file structure remains the source of truth.
+ *   middleware.ts rewrites /app/* → /t/* before auth checks. /console/*
+ *   pass through unchanged. Permission checks below run on the INTERNAL paths.
  *
  * ROLE HIERARCHY:
  *   super_admin  → Unntangle staff. Access to /console/* only.
@@ -85,7 +85,7 @@ export function canAccess(path: string, role: Role | null | undefined): boolean 
  * is responsible for converting to the right absolute URL via lib/urls.ts.
  */
 export function getDefaultLandingPath(role: Role): string {
-  if (role === 'super_admin') return '/console';
+  if (role === 'super_admin') return '/console/dashboard';
   return '/t/dashboard';
 }
 
@@ -120,13 +120,13 @@ export const BPO_NAV_GENERAL: NavItem[] = [
 ];
 
 export const CONSOLE_NAV: NavItem[] = [
-  { label: 'Global Overview',  href: '/dashboard',   allowedRoles: ['super_admin'], iconName: 'LayoutDashboard' },
-  { label: 'BPO Clients',      href: '/clients',     allowedRoles: ['super_admin'], iconName: 'Users' },
-  { label: 'Platform Billing', href: '/billing',     allowedRoles: ['super_admin'], iconName: 'CreditCard' },
-  { label: 'Credit Ledger',    href: '/credits',     allowedRoles: ['super_admin'], iconName: 'Coins' },
-  { label: 'System Health',    href: '/health',      allowedRoles: ['super_admin'], iconName: 'Server' },
-  { label: 'Security & Audit', href: '/audit',       allowedRoles: ['super_admin'], iconName: 'Shield' },
-  { label: 'Platform Settings',href: '/settings',    allowedRoles: ['super_admin'], iconName: 'Settings' },
+  { label: 'Global Overview',  href: '/console/dashboard',   allowedRoles: ['super_admin'], iconName: 'LayoutDashboard' },
+  { label: 'BPO Clients',      href: '/console/clients',     allowedRoles: ['super_admin'], iconName: 'Users' },
+  { label: 'Platform Billing', href: '/console/billing',     allowedRoles: ['super_admin'], iconName: 'CreditCard' },
+  { label: 'Credit Ledger',    href: '/console/credits',     allowedRoles: ['super_admin'], iconName: 'Coins' },
+  { label: 'System Health',    href: '/console/health',      allowedRoles: ['super_admin'], iconName: 'Server' },
+  { label: 'Security & Audit', href: '/console/audit',       allowedRoles: ['super_admin'], iconName: 'Shield' },
+  { label: 'Platform Settings',href: '/console/settings',    allowedRoles: ['super_admin'], iconName: 'Settings' },
 ];
 
 export function filterNavByRole(items: NavItem[], role: Role | null | undefined): NavItem[] {

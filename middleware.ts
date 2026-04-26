@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { canAccess, PUBLIC_ROUTES, getDefaultLandingPath, type Role } from './lib/permissions';
+import { canAccess, PUBLIC_ROUTES, type Role } from './lib/permissions';
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'voiceai_jwt_secret_change_in_production_2024'
@@ -25,87 +25,61 @@ async function verify(token: string): Promise<SessionPayload | null> {
 }
 
 /**
- * Identify which subdomain the request came in on.
+ * Single-subdomain layout (uvoiz.unntangle.com hosts both the BPO product
+ * and the super admin console as path zones):
  *
- * Production:  uvoiz.unntangle.com, console.unntangle.com, unntangle.com
- * Local dev:   uvoiz.localhost:3000, console.localhost:3000, localhost:3000
+ *   /app/*        → BPO product   (rewritten internally to /t/*)
+ *   /console/*    → Super admin   (no rewrite — files live at app/console/*)
+ *   /login        → public, shared by both
+ *   /sign-up      → public
+ *   /forgot-password, /reset-password, /onboarding → public or any-authed
  *
- * Returns 'uvoiz' | 'console' | null (root domain or unknown).
+ * The legacy `console.unntangle.com` host is permanently redirected to the
+ * equivalent path on uvoiz.unntangle.com so old bookmarks don't 404 during
+ * the cutover. Remove the redirect block after a few months.
  */
-function detectSubdomain(host: string): 'uvoiz' | 'console' | null {
-  const cleanHost = host.split(':')[0].toLowerCase();
-  if (cleanHost.startsWith('uvoiz.')) return 'uvoiz';
-  if (cleanHost.startsWith('console.')) return 'console';
-  return null;
+
+/** True if the host is the deprecated console subdomain. */
+function isLegacyConsoleHost(host: string): boolean {
+  return host.toLowerCase().split(':')[0].startsWith('console.');
 }
 
-/**
- * Strip a leading subdomain ("uvoiz.", "console.") to get the root domain.
- * "uvoiz.unntangle.com" → "unntangle.com"
- * "unntangle.com" → "unntangle.com"
- */
+/** Strip a leading subdomain to get the root domain. */
 function getRootDomain(host: string): string {
   const noPort = host.split(':')[0];
-  if (noPort.startsWith('uvoiz.')) return noPort.slice(6);
-  if (noPort.startsWith('console.')) return noPort.slice(8);
+  if (noPort.startsWith('uvoiz.')) return noPort.slice('uvoiz.'.length);
+  if (noPort.startsWith('console.')) return noPort.slice('console.'.length);
   return noPort;
 }
 
-/**
- * Build the absolute URL for the BPO app home page based on the current host.
- * Local dev:  http://uvoiz.localhost:3000/app/dashboard
- * Production: https://uvoiz.unntangle.com/app/dashboard
- */
+/** Build the canonical uvoiz host string (with port for local dev). */
+function getCanonicalHost(host: string): string {
+  const cleanHost = host.toLowerCase();
+  const isLocal = cleanHost.includes('localhost');
+  const port = cleanHost.includes(':') ? ':' + cleanHost.split(':')[1] : '';
+  if (isLocal) return `uvoiz.localhost${port}`;
+  return `uvoiz.${getRootDomain(cleanHost)}`;
+}
+
+/** Build absolute URL for the BPO app home. */
 function getAppHomeUrl(host: string): string {
   const cleanHost = host.toLowerCase();
-  const isLocal = cleanHost.includes('localhost');
-  const protocol = isLocal ? 'http' : 'https';
-
-  if (isLocal) {
-    const port = cleanHost.includes(':') ? ':' + cleanHost.split(':')[1] : '';
-    return `${protocol}://uvoiz.localhost${port}/app/dashboard`;
-  }
-
-  const rootDomain = getRootDomain(cleanHost);
-  return `${protocol}://uvoiz.${rootDomain}/app/dashboard`;
+  const protocol = cleanHost.includes('localhost') ? 'http' : 'https';
+  return `${protocol}://${getCanonicalHost(host)}/app/dashboard`;
 }
 
-/**
- * Build the absolute URL for the super admin console home page.
- */
+/** Build absolute URL for the super admin console home. */
 function getConsoleHomeUrl(host: string): string {
   const cleanHost = host.toLowerCase();
-  const isLocal = cleanHost.includes('localhost');
-  const protocol = isLocal ? 'http' : 'https';
-
-  if (isLocal) {
-    const port = cleanHost.includes(':') ? ':' + cleanHost.split(':')[1] : '';
-    return `${protocol}://console.localhost${port}/dashboard`;
-  }
-
-  const rootDomain = getRootDomain(cleanHost);
-  return `${protocol}://console.${rootDomain}/dashboard`;
+  const protocol = cleanHost.includes('localhost') ? 'http' : 'https';
+  return `${protocol}://${getCanonicalHost(host)}/console/dashboard`;
 }
 
-/**
- * Build the login URL for the current subdomain.
- * Both uvoiz.* and console.* have their own /login page (same React component).
- */
-function getLoginUrl(host: string, subdomain: 'uvoiz' | 'console' | null, redirectPath?: string): URL {
+/** Build the login URL on the uvoiz host. Optionally append a redirect path. */
+function getLoginUrl(host: string, redirectPath?: string): URL {
   const cleanHost = host.toLowerCase();
-  const isLocal = cleanHost.includes('localhost');
-  const protocol = isLocal ? 'http' : 'https';
-  const port = cleanHost.includes(':') ? ':' + cleanHost.split(':')[1] : '';
-
-  let targetHost: string;
-  if (subdomain === 'console') {
-    targetHost = isLocal ? `console.localhost${port}` : `console.${getRootDomain(cleanHost)}`;
-  } else {
-    // Default to uvoiz.* for any unauthed visit (including root domain)
-    targetHost = isLocal ? `uvoiz.localhost${port}` : `uvoiz.${getRootDomain(cleanHost)}`;
-  }
-
-  const url = new URL(`${protocol}://${targetHost}/login`);
+  const protocol = cleanHost.includes('localhost') ? 'http' : 'https';
+  const url = new URL(`${protocol}://${getCanonicalHost(host)}/login`);
   if (redirectPath) url.searchParams.set('redirect', redirectPath);
   return url;
 }
@@ -114,29 +88,26 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
   const { pathname } = url;
   const host = request.headers.get('host') || '';
-  const subdomain = detectSubdomain(host);
 
   // ─────────────────────────────────────────────────────────────────
-  // 1. Subdomain → internal path rewriting
+  // 0. Legacy console.* host → permanently redirect to uvoiz.*/console/*
   //
-  // User-facing URLs are clean (uvoiz.unntangle.com/app/dashboard).
-  // Internally Next.js needs the actual file path (/t/dashboard).
-  // We rewrite BEFORE auth checks so all downstream logic uses the
-  // real internal path.
+  // Old URL: console.unntangle.com/clients
+  // New URL: uvoiz.unntangle.com/console/clients
+  //
+  // Done up here so the redirect never gets entangled with auth or rewrite
+  // logic. Remove this block once analytics show no more traffic to console.*
   // ─────────────────────────────────────────────────────────────────
 
-  let internalPath = pathname;
+  if (isLegacyConsoleHost(host)) {
+    const cleanHost = host.toLowerCase();
+    const protocol = cleanHost.includes('localhost') ? 'http' : 'https';
+    const targetHost = getCanonicalHost(host);
 
-  if (subdomain === 'uvoiz') {
-    // /app/X → /t/X (the BPO app)
-    if (pathname === '/app' || pathname.startsWith('/app/')) {
-      internalPath = pathname.replace(/^\/app/, '/t') || '/t';
-    }
-    // /login, /sign-up, /onboarding, /forgot-password, /reset-password
-    // and / stay as-is. They map directly to app/login, app/sign-up, etc.
-  } else if (subdomain === 'console') {
-    // Anything that isn't already /console/*, /api/*, /_next/*, or an auth page
-    // → prefix with /console
+    // Map legacy console paths onto the new /console/* prefix. The old
+    // console used clean paths like /dashboard, /clients, /billing — wrap
+    // them all under /console/. Auth pages (login, sign-up, etc.) just move
+    // to the same path on the new host.
     const isAuthPath = pathname === '/login'
       || pathname.startsWith('/login/')
       || pathname === '/sign-up'
@@ -146,17 +117,35 @@ export async function middleware(request: NextRequest) {
       || pathname === '/reset-password'
       || pathname.startsWith('/reset-password/');
 
-    if (pathname === '/' || pathname === '/dashboard') {
-      internalPath = '/console';
-    } else if (
-      !pathname.startsWith('/console') &&
-      !pathname.startsWith('/api/') &&
-      !pathname.startsWith('/_next/') &&
-      !isAuthPath &&
-      !pathname.includes('.') // skip static files
-    ) {
-      internalPath = '/console' + pathname;
+    let newPath: string;
+    if (isAuthPath) {
+      newPath = pathname;
+    } else if (pathname === '/' || pathname === '') {
+      newPath = '/console/dashboard';
+    } else if (pathname.startsWith('/console')) {
+      newPath = pathname;
+    } else {
+      newPath = '/console' + pathname;
     }
+
+    const target = `${protocol}://${targetHost}${newPath}${url.search}`;
+    return NextResponse.redirect(target, 308);  // 308 preserves method
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // 1. BPO path rewriting: /app/* → /t/*
+  //
+  // The BPO app's user-facing URLs use /app/* but the file structure lives
+  // at app/t/*. Rewrite here so downstream auth checks and Next.js routing
+  // both see the internal path.
+  //
+  // /console/* needs no rewrite — files already live at app/console/*.
+  // ─────────────────────────────────────────────────────────────────
+
+  let internalPath = pathname;
+
+  if (pathname === '/app' || pathname.startsWith('/app/')) {
+    internalPath = pathname.replace(/^\/app/, '/t') || '/t';
   }
 
   const rewriteUrl = url.clone();
@@ -184,48 +173,55 @@ export async function middleware(request: NextRequest) {
 
   const token = request.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
-    return NextResponse.redirect(getLoginUrl(host, subdomain, pathname));
+    return NextResponse.redirect(getLoginUrl(host, pathname));
   }
 
   const session = await verify(token);
   if (!session) {
-    return NextResponse.redirect(getLoginUrl(host, subdomain, pathname));
+    return NextResponse.redirect(getLoginUrl(host, pathname));
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // 4. Subdomain-vs-role enforcement
-  // Super admins on uvoiz.* → bounce to console.
-  // BPO users on console.*  → bounce to app.
+  // 4. Zone-vs-role enforcement
+  //
+  // - Super admins on /app/* (or its rewrite /t/*) → bounce to console
+  // - BPO users on /console/* → bounce to app
+  //
+  // This used to be host-based; now it's path-based since both zones
+  // share the same host.
   // ─────────────────────────────────────────────────────────────────
 
-  if (subdomain === 'uvoiz' && session.role === 'super_admin') {
+  const isAppZone = internalPath === '/t' || internalPath.startsWith('/t/');
+  const isConsoleZone = internalPath === '/console' || internalPath.startsWith('/console/');
+
+  if (isAppZone && session.role === 'super_admin') {
     return NextResponse.redirect(getConsoleHomeUrl(host));
   }
-  if (subdomain === 'console' && session.role !== 'super_admin') {
+  if (isConsoleZone && session.role !== 'super_admin') {
     return NextResponse.redirect(getAppHomeUrl(host));
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // 5. Legacy redirects on the root domain (back-compat)
+  // 5. Legacy redirects — short top-level paths from before the /app prefix
   // ─────────────────────────────────────────────────────────────────
 
-  if (!subdomain) {
-    if (pathname === '/admin' || pathname.startsWith('/admin/')) {
-      return NextResponse.redirect(new URL(pathname.replace(/^\/admin/, '/console'), request.url));
-    }
-    if (pathname === '/dashboard') {
-      return NextResponse.redirect(new URL('/t/dashboard', request.url));
-    }
-    const legacyTopLevel = ['/agents', '/campaigns', '/calls', '/analytics', '/billing', '/settings'];
-    for (const legacy of legacyTopLevel) {
-      if (pathname === legacy || pathname.startsWith(legacy + '/')) {
-        return NextResponse.redirect(new URL('/t' + pathname, request.url));
-      }
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return NextResponse.redirect(new URL(pathname.replace(/^\/admin/, '/console'), request.url));
+  }
+  if (pathname === '/dashboard') {
+    // Ambiguous — could mean BPO or console. Send to BPO; super_admin will
+    // be bounced to /console by step 4 on the next request.
+    return NextResponse.redirect(new URL('/app/dashboard', request.url));
+  }
+  const legacyTopLevel = ['/agents', '/campaigns', '/calls', '/analytics', '/billing', '/settings'];
+  for (const legacy of legacyTopLevel) {
+    if (pathname === legacy || pathname.startsWith(legacy + '/')) {
+      return NextResponse.redirect(new URL('/app' + pathname, request.url));
     }
   }
 
   // ─────────────────────────────────────────────────────────────────
-  // 6. Authorize against permission map (operates on internalPath)
+  // 6. Authorize against permission map (uses internalPath, e.g. /t/*, /console/*)
   // ─────────────────────────────────────────────────────────────────
 
   if (internalPath.startsWith('/api/')) {

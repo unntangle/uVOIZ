@@ -100,8 +100,8 @@ export default function Login() {
         return;
       }
 
-      // Redirect to the right subdomain based on role.
-      // Super admins → console.unntangle.com/dashboard
+      // Redirect to the right path zone based on role.
+      // Super admins → uvoiz.unntangle.com/console/dashboard
       // BPO admins/managers → uvoiz.unntangle.com/app/dashboard
       const destination = loginRedirectUrlForRole(data.user?.role || 'admin');
 

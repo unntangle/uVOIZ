@@ -56,7 +56,7 @@ export default function ConsoleTopbar({ crumbs = [{ label: 'Dashboard' }] }: Con
           things eventually go wrong. Stays green normally; the page that
           surfaces it can flip it amber/red as needed. */}
       <Link
-        href="/health"
+        href="/console/health"
         title="All platform systems operational — click to view System Health"
         style={{
           display: 'flex', alignItems: 'center', gap: 6,

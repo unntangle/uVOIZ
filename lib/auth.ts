@@ -57,10 +57,11 @@ export async function getSessionFromRequest(req: NextRequest): Promise<SessionUs
 export function sessionCookieOptions(token: string) {
   // Cookie domain controls which hosts can read the session.
   //
-  // In production, we want the cookie shared across all subdomains of
-  // unntangle.com (uvoiz.*, console.*, future umail.*, etc.) so a single
-  // sign-in works everywhere. Setting domain='.unntangle.com' (with the
-  // leading dot) achieves this.
+  // In production we use the .unntangle.com scope so the cookie is shared
+  // between uvoiz.unntangle.com (the live app) and console.unntangle.com
+  // (the legacy host that 308-redirects to uvoiz.* /console/*). This means
+  // anyone hitting an old console.* bookmark while signed in stays signed
+  // in through the redirect, no re-login required.
   //
   // In local dev, we omit the domain attribute so the cookie stays host-only.
   // Modern browsers share cookies between localhost and *.localhost when no

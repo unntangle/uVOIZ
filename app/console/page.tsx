@@ -235,7 +235,7 @@ export default function ConsoleDashboard() {
                       </td>
                       <td>
                         <Link
-                          href={`/clients/${org.id}`}
+                          href={`/console/clients/${org.id}`}
                           className="btn btn-ghost btn-sm"
                           style={{ textDecoration: 'none' }}
                         >
@@ -253,10 +253,10 @@ export default function ConsoleDashboard() {
         {/* Quick links — monochrome to match the rest of the operator surface */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {[
-            { label: 'BPO Clients',      href: '/clients', icon: Users },
-            { label: 'Platform Billing', href: '/billing', icon: IndianRupee },
-            { label: 'System Health',    href: '/health',  icon: Activity },
-            { label: 'Active Calls',     href: '/clients', icon: Phone },
+            { label: 'BPO Clients',      href: '/console/clients', icon: Users },
+            { label: 'Platform Billing', href: '/console/billing', icon: IndianRupee },
+            { label: 'System Health',    href: '/console/health',  icon: Activity },
+            { label: 'Active Calls',     href: '/console/clients', icon: Phone },
           ].map(q => {
             const QIcon = q.icon;
             return (

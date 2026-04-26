@@ -11,19 +11,19 @@ const ICON_MAP: Record<string, any> = {
   LayoutDashboard, Users, Server, Shield, CreditCard, Coins, Settings,
 };
 
-// User-facing URLs on console.unntangle.com.
-// Internally, middleware rewrites /dashboard → /console, /clients → /console/clients, etc.
+// User-facing URLs on uvoiz.unntangle.com under the /console/* zone.
+// Files live at app/console/* — no middleware rewrite happens for these.
 const NAV_MAIN = [
-  { iconName: 'LayoutDashboard', label: 'Global Overview',  href: '/dashboard' },
-  { iconName: 'Users',           label: 'BPO Clients',      href: '/clients' },
-  { iconName: 'CreditCard',      label: 'Platform Billing', href: '/billing' },
-  { iconName: 'Coins',           label: 'Credit Ledger',    href: '/credits' },
+  { iconName: 'LayoutDashboard', label: 'Global Overview',  href: '/console/dashboard' },
+  { iconName: 'Users',           label: 'BPO Clients',      href: '/console/clients' },
+  { iconName: 'CreditCard',      label: 'Platform Billing', href: '/console/billing' },
+  { iconName: 'Coins',           label: 'Credit Ledger',    href: '/console/credits' },
 ];
 
 const NAV_GENERAL = [
-  { iconName: 'Server',          label: 'System Health',    href: '/health' },
-  { iconName: 'Shield',          label: 'Security & Audit', href: '/audit' },
-  { iconName: 'Settings',        label: 'Platform Settings',href: '/settings' },
+  { iconName: 'Server',          label: 'System Health',    href: '/console/health' },
+  { iconName: 'Shield',          label: 'Security & Audit', href: '/console/audit' },
+  { iconName: 'Settings',        label: 'Platform Settings',href: '/console/settings' },
 ];
 
 interface ConsoleSidebarProps {
@@ -44,12 +44,13 @@ export default function ConsoleSidebar({ userName, userEmail }: ConsoleSidebarPr
   };
 
   // Compute active nav item from pathname. Match exact path or nested paths.
-  // Also treat root "/" and internal "/console" as Global Overview.
+  // The console root "/console" (no trailing path) and "/console/dashboard"
+  // both light up Global Overview.
   const isActiveHref = (href: string) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard'
-          || pathname === '/'
-          || pathname === '/console';
+    if (href === '/console/dashboard') {
+      return pathname === '/console/dashboard'
+          || pathname === '/console'
+          || pathname === '/console/';
     }
     return pathname === href || pathname.startsWith(href + '/');
   };
