@@ -37,9 +37,9 @@ export async function GET(req: NextRequest) {
       .from('users')
       .select('org_id');
 
-    const orgsWithUserCounts = orgs?.map(org => ({
+    const orgsWithUserCounts = orgs?.map((org: any) => ({
       ...org,
-      user_count: users?.filter(u => u.org_id === org.id).length || 0,
+      user_count: users?.filter((u: any) => u.org_id === org.id).length || 0,
     })) || [];
 
     return NextResponse.json({ orgs: orgsWithUserCounts });

@@ -150,11 +150,11 @@ export async function getDashboardStats(orgId: string) {
     .gte('created_at', today.toISOString());
 
   const total = todayCalls?.length || 0;
-  const active = todayCalls?.filter(c => c.status === 'in-progress').length || 0;
-  const converted = todayCalls?.filter(c => c.converted).length || 0;
-  const completed = todayCalls?.filter(c => c.status === 'completed') || [];
+  const active = todayCalls?.filter((c: any) => c.status === 'in-progress').length || 0;
+  const converted = todayCalls?.filter((c: any) => c.converted).length || 0;
+  const completed = todayCalls?.filter((c: any) => c.status === 'completed') || [];
   const avgDuration = completed.length > 0
-    ? Math.round(completed.reduce((a, c) => a + (c.duration || 0), 0) / completed.length)
+    ? Math.round(completed.reduce((a: number, c: any) => a + (c.duration || 0), 0) / completed.length)
     : 0;
 
   return {

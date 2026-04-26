@@ -26,11 +26,11 @@ export async function GET(req: NextRequest) {
     
     // Sum of all minutes used
     const { data: orgs } = await supabaseAdmin.from('organizations').select('minutes_used, plan');
-    const totalMinutesUsed = orgs?.reduce((acc, org) => acc + (org.minutes_used || 0), 0) || 0;
+    const totalMinutesUsed = orgs?.reduce((acc: number, org: any) => acc + (org.minutes_used || 0), 0) || 0;
     
     // Estimate MRR (very rough estimate based on plan)
     let revenueEstimate = 0;
-    orgs?.forEach(org => {
+    orgs?.forEach((org: any) => {
       if (org.plan === 'enterprise') revenueEstimate += 499;
       else if (org.plan === 'pro') revenueEstimate += 199;
       else if (org.plan === 'starter') revenueEstimate += 49;
