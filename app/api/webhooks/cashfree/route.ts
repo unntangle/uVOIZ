@@ -19,10 +19,13 @@ import { supabaseAdmin } from '@/lib/supabase';
  *   safety net.
  *
  * Idempotency:
- *   billing_events.razorpay_payment_id (legacy column name) stores the
- *   Cashfree order id. We dedupe on it — if a completed event already
- *   exists for this order, we skip crediting. So whichever of (verify
- *   route, this webhook) wins the race, the user gets credited once.
+ *   The verify route and this webhook can race for the SAME order. We
+ *   rely on a UNIQUE INDEX on billing_events.cf_payment_id to make the
+ *   DB itself reject the second insert. Whichever caller wins the insert
+ *   credits the org; the loser gets a 23505 unique_violation and exits.
+ *
+ *   Order of operations matters: insert event FIRST, then update org.
+ *   Reversing this opens the same race we just closed.
  *
  * Security:
  *   We verify the HMAC-SHA256 signature on `timestamp + raw_body`. If it
@@ -69,17 +72,6 @@ export async function POST(req: NextRequest) {
   ) {
     console.log('Cashfree webhook: non-success event', { eventType, orderId, orderStatus });
     return NextResponse.json({ received: true });
-  }
-
-  // Idempotency guard — has the verify route already credited this order?
-  const { data: existing } = await supabaseAdmin
-    .from('billing_events')
-    .select('id')
-    .eq('razorpay_payment_id', orderId)
-    .eq('status', 'completed')
-    .maybeSingle();
-  if (existing) {
-    return NextResponse.json({ received: true, alreadyCredited: true });
   }
 
   // Pull the order from Cashfree to get authoritative tags (org_id, plan,
@@ -140,6 +132,31 @@ export async function POST(req: NextRequest) {
     newPlanId = resolveTierAfterPack((org as any).plan ?? 'free', plan);
   }
 
+  // ---- Step 1: Try to claim this order via insert ----
+  // UNIQUE INDEX on cf_payment_id means concurrent verify+webhook callers
+  // race here, and only one wins. See verify route docstring for the full
+  // reasoning.
+  const { error: insertError } = await supabaseAdmin
+    .from('billing_events')
+    .insert({
+      org_id: orgId,
+      type: kind,
+      amount: amountRupees,
+      currency: 'INR',
+      cf_payment_id: orderId,
+      status: 'completed',
+    });
+
+  if (insertError) {
+    if ((insertError as any).code === '23505') {
+      // Verify route already credited this order. Nothing to do.
+      return NextResponse.json({ received: true, alreadyCredited: true });
+    }
+    console.error('Cashfree webhook: insert failed', insertError);
+    return NextResponse.json({ received: true });
+  }
+
+  // ---- Step 2: We claimed it — apply minutes + tier change ----
   const currentLimit = (org as any).minutes_limit ?? 0;
   const newLimit = currentLimit + minutesAdded;
 
@@ -151,15 +168,6 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     })
     .eq('id', orgId);
-
-  await supabaseAdmin.from('billing_events').insert({
-    org_id: orgId,
-    type: kind,
-    amount: amountRupees,
-    currency: 'INR',
-    razorpay_payment_id: orderId, // legacy column name
-    status: 'completed',
-  });
 
   return NextResponse.json({ received: true, credited: true });
 }

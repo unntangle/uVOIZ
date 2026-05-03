@@ -104,13 +104,22 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 
 -- Billing events
+-- cf_payment_id stores the Cashfree order id (was named razorpay_payment_id
+-- before the 2026-05 migration to Cashfree). The unique index lets the
+-- verify route and the webhook race for the same order safely — only one
+-- caller's INSERT succeeds, the other gets a 23505 unique_violation and
+-- exits cleanly. See app/api/billing/verify/route.ts for the pattern.
 CREATE TABLE IF NOT EXISTS billing_events (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
   type TEXT NOT NULL,
   amount INTEGER,
   currency TEXT DEFAULT 'INR',
-  razorpay_payment_id TEXT,
+  cf_payment_id TEXT,
   status TEXT DEFAULT 'pending',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS billing_events_cf_payment_id_unique
+  ON billing_events (cf_payment_id)
+  WHERE cf_payment_id IS NOT NULL;

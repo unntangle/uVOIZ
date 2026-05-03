@@ -31,11 +31,23 @@ import { supabaseAdmin } from '@/lib/supabase';
  *
  * minutes_used is never reset — usage carries over (prepaid wallet model).
  *
- * Idempotency: this endpoint may be called more than once for the same
- * orderId (user retries, modal closes oddly, webhook beats client). We
- * dedupe by checking billing_events.razorpay_payment_id (legacy column
- * name; we store the Cashfree order id in it). If a completed event for
- * this orderId already exists, we return success without crediting again.
+ * Idempotency (the important part):
+ *   This endpoint can run concurrently with the Cashfree webhook for the
+ *   SAME order — verify route fires when the modal closes, webhook fires
+ *   server-to-server. A naive "SELECT existing event, then INSERT if not
+ *   found" pattern races: both callers SELECT empty, both INSERT, org gets
+ *   credited twice.
+ *
+ *   The fix: a UNIQUE INDEX on billing_events.cf_payment_id (added via
+ *   lib/migrations/003_billing_events_unique.sql, then renamed in
+ *   lib/migrations/004_rename_payment_id_column.sql). Insert the event
+ *   FIRST. If the insert wins, we credit the org. If the insert loses
+ *   (Postgres returns 23505 unique_violation), we know the other caller
+ *   already credited and we exit cleanly.
+ *
+ *   This makes the billing_events row the source of truth for "was this
+ *   order credited?" instead of the org's minutes_limit, which has no
+ *   uniqueness invariant of its own.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -61,19 +73,6 @@ export async function POST(req: NextRequest) {
     const planConfig = PLANS[plan];
     if (planConfig.isFree) {
       return NextResponse.json({ error: 'Free plan cannot be purchased' }, { status: 400 });
-    }
-
-    // ---- Idempotency check: have we already credited this order? ----
-    if (supabaseAdmin) {
-      const { data: existing } = await supabaseAdmin
-        .from('billing_events')
-        .select('id, status')
-        .eq('razorpay_payment_id', orderId)
-        .eq('status', 'completed')
-        .maybeSingle();
-      if (existing) {
-        return NextResponse.json({ success: true, alreadyCredited: true });
-      }
     }
 
     // ---- Demo mode short-circuit (no Cashfree creds) ----
@@ -111,12 +110,8 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * Apply minutes + tier changes and record the billing event. Shared by
- * the live and demo paths.
- *
- * Note: the column is called `razorpay_payment_id` for legacy reasons.
- * It now stores the Cashfree order id (live) or 'demo' (sandbox flow).
- * Renaming the column is a separate migration we can do later.
+ * Insert the billing event first, then credit the org. The order matters —
+ * see idempotency note in the route docstring.
  */
 async function creditOrg(args: {
   org: any;
@@ -171,6 +166,36 @@ async function creditOrg(args: {
     eventType = 'pack';
   }
 
+  // ---- Step 1: Try to claim this order by inserting the event row ----
+  // The UNIQUE INDEX on cf_payment_id means whichever concurrent caller
+  // (verify route or webhook) inserts first, wins. The loser gets a
+  // Postgres error code 23505 (unique_violation) and we treat that as
+  // "someone already credited this order" — which is exactly what we want.
+  const { error: insertError } = await supabaseAdmin
+    .from('billing_events')
+    .insert({
+      org_id: org.id,
+      type: eventType,
+      amount: amountRupees,
+      currency: 'INR',
+      cf_payment_id: orderId,
+      status: 'completed',
+    });
+
+  if (insertError) {
+    // 23505 = unique_violation — the canonical "already credited" signal.
+    // PostgREST surfaces it via `code: '23505'`.
+    if ((insertError as any).code === '23505') {
+      return NextResponse.json({
+        success: true,
+        alreadyCredited: true,
+      });
+    }
+    console.error('Billing verify: failed to insert billing_event', insertError);
+    return NextResponse.json({ error: 'Could not record payment' }, { status: 500 });
+  }
+
+  // ---- Step 2: We claimed the order — now apply the minutes/tier change ----
   const newLimit = currentLimit + minutesAdded;
 
   await supabaseAdmin
@@ -182,15 +207,6 @@ async function creditOrg(args: {
       updated_at: new Date().toISOString(),
     })
     .eq('id', org.id);
-
-  await supabaseAdmin.from('billing_events').insert({
-    org_id: org.id,
-    type: eventType,
-    amount: amountRupees,
-    currency: 'INR',
-    razorpay_payment_id: orderId, // legacy column name; now stores Cashfree order id
-    status: 'completed',
-  });
 
   return NextResponse.json({
     success: true,
