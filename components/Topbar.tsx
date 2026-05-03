@@ -32,6 +32,17 @@ const PLAN_LABELS: Record<string, string> = {
   agency: 'Scale',
 };
 
+/**
+ * Custom DOM event other parts of the app dispatch when org-level data
+ * changes (e.g. after a successful purchase on the billing page). Topbar
+ * listens for it and refetches so the badge stays in sync without
+ * needing a hard reload or React Context.
+ *
+ * Dispatch from anywhere with:
+ *   window.dispatchEvent(new Event('uvoiz:org-updated'));
+ */
+export const ORG_UPDATED_EVENT = 'uvoiz:org-updated';
+
 export default function Topbar({
   crumbs = [{ label: 'Dashboard' }],
   minutesUsed: minutesUsedProp,
@@ -50,9 +61,12 @@ export default function Topbar({
     }
 
     let cancelled = false;
-    (async () => {
+
+    /** Pull fresh org data from the server. Used both on mount and when
+     *  another component fires the org-updated event (e.g. after a buy). */
+    const refetch = async () => {
       try {
-        const res = await fetch('/api/onboarding');
+        const res = await fetch('/api/onboarding', { cache: 'no-store' });
         if (!res.ok) {
           if (!cancelled) setLoaded(true);
           return;
@@ -70,8 +84,18 @@ export default function Topbar({
       } catch {
         if (!cancelled) setLoaded(true);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    refetch();
+
+    // Listen for purchase events from anywhere on the page.
+    const handleOrgUpdated = () => { void refetch(); };
+    window.addEventListener(ORG_UPDATED_EVENT, handleOrgUpdated);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(ORG_UPDATED_EVENT, handleOrgUpdated);
+    };
   }, [planProp, minutesUsedProp, minutesLimitProp]);
 
   const minutesUsed = minutesUsedProp ?? org?.minutes_used ?? 0;

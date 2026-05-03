@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
-import Topbar from '@/components/Topbar';
+import Topbar, { ORG_UPDATED_EVENT } from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import { Check, Zap, Building2, Rocket, Loader2, Sparkles, Lock } from 'lucide-react';
 import { PLANS_LIST, MIN_CUSTOM_MINUTES, type Plan, type PlanId } from '@/lib/plans';
@@ -27,6 +27,11 @@ import { canBuyPack } from '@/lib/billing-rules';
  *     all minutes are consumed, the lock lifts.
  *   - Custom-minute top-up: only on the user's CURRENT paid plan card.
  *     Free users see no custom-buy field — must buy a pack first.
+ *
+ * Cross-component sync:
+ *   After every successful purchase we also dispatch ORG_UPDATED_EVENT on
+ *   `window` so the Topbar (and any other listener) refetches and stays
+ *   in sync without needing a hard reload.
  */
 
 // Map icon names from plan config to lucide-react components.
@@ -75,7 +80,7 @@ export default function Billing() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/onboarding');
+        const res = await fetch('/api/onboarding', { cache: 'no-store' });
         if (!res.ok) {
           if (!cancelled) setLoaded(true);
           return;
@@ -98,16 +103,26 @@ export default function Billing() {
     return () => { cancelled = true; };
   }, []);
 
-  // Refetch org state after a successful purchase so the UI reflects the
-  // new plan/limit without a hard reload.
+  /**
+   * Refetch org state after a successful purchase so the UI reflects the
+   * new plan/limit without a hard reload. Also fires a window event so the
+   * Topbar (which has its own private fetch) refreshes its badge in sync.
+   */
   const refreshOrg = async () => {
     try {
-      const res = await fetch('/api/onboarding');
+      // cache: 'no-store' — bypass any HTTP cache so we always see the
+      // post-purchase row, not a stale read.
+      const res = await fetch('/api/onboarding', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       if (data.org) setOrg(data.org);
     } catch (err) {
       console.error('Failed to refresh org:', err);
+    } finally {
+      // Always dispatch — even on a fetch failure the Topbar can retry.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(ORG_UPDATED_EVENT));
+      }
     }
   };
 
@@ -210,7 +225,12 @@ export default function Billing() {
   const minutesUsed = org?.minutes_used || 0;
   const minutesLimit = org?.minutes_limit || 100;
   const minutePct = Math.min(100, (minutesUsed / Math.max(1, minutesLimit)) * 100);
-  const currentPlan = (org?.plan || 'free').toLowerCase();
+  // Important: while we're still loading the org row, fall back to a
+  // sentinel value that doesn't match any plan id. Otherwise `currentPlan`
+  // defaults to 'free' and the Free Trial card flashes "Current Plan"
+  // before the real plan loads — even for paid users. Empty string fails
+  // every `currentPlan === plan.id` check, so no card lights up.
+  const currentPlan = loaded ? (org?.plan || 'free').toLowerCase() : '';
   const minutesRemaining = Math.max(0, minutesLimit - minutesUsed);
 
   // Org snapshot used by the rule helpers. Mirrors the API view.
@@ -355,22 +375,27 @@ export default function Billing() {
                       ))}
                     </div>
 
-                    {/* --- Pack purchase button --- */}
+                    {/* --- Pack purchase button ---
+                        Disabled (in addition to the obvious cases) until org
+                        data has loaded — prevents a click on a card that
+                        looks buyable but might actually be the user's current
+                        plan once data arrives. */}
                     <button
-                      onClick={() => !isCurrent && !plan.isFree && !isLocked && handleBuy(plan.id)}
-                      disabled={isCurrent || isPackLoading || plan.isFree || isLocked}
+                      onClick={() => loaded && !isCurrent && !plan.isFree && !isLocked && handleBuy(plan.id)}
+                      disabled={!loaded || isCurrent || isPackLoading || plan.isFree || isLocked}
                       style={{
                         width: '100%', justifyContent: 'center', padding: '12px',
-                        background: isCurrent || isLocked ? 'var(--bg3)' : isPackSuccess ? 'var(--green)' : plan.isFree ? 'var(--bg3)' : plan.color,
-                        color: isCurrent || plan.isFree || isLocked ? 'var(--text2)' : 'white',
-                        border: plan.isFree || isLocked ? '1px solid var(--border)' : 'none',
+                        background: !loaded ? 'var(--bg3)' : isCurrent || isLocked ? 'var(--bg3)' : isPackSuccess ? 'var(--green)' : plan.isFree ? 'var(--bg3)' : plan.color,
+                        color: !loaded || isCurrent || plan.isFree || isLocked ? 'var(--text2)' : 'white',
+                        border: !loaded || plan.isFree || isLocked ? '1px solid var(--border)' : 'none',
                         borderRadius: 10, fontFamily: 'Inter, sans-serif',
                         fontWeight: 600, fontSize: 14,
-                        cursor: (isCurrent || plan.isFree || isLocked) ? 'default' : 'pointer',
+                        cursor: (!loaded || isCurrent || plan.isFree || isLocked) ? 'default' : 'pointer',
                         display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s',
                       }}
                     >
-                      {isPackLoading ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing...</>
+                      {!loaded ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /></>
+                        : isPackLoading ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing...</>
                         : isPackSuccess ? <><Check size={16} /> Purchased!</>
                         : isCurrent ? 'Current Pack'
                         : plan.isFree ? 'Active by default'
