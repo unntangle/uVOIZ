@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Topbar, { ORG_UPDATED_EVENT } from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
-import { Check, Zap, Building2, Rocket, Loader2, Sparkles, Lock } from 'lucide-react';
+import { Check, Loader2, Lock, Plus, X } from 'lucide-react';
 import { PLANS_LIST, MIN_CUSTOM_MINUTES, type Plan, type PlanId } from '@/lib/plans';
 import { canBuyPack } from '@/lib/billing-rules';
 
@@ -14,28 +14,51 @@ import { canBuyPack } from '@/lib/billing-rules';
  * top up by typing a custom minute count on THEIR CURRENT plan card.
  * Minutes never expire. Verify route ADDS minutes (never resets).
  *
+ * Visual language for plan cards:
+ *   - "Current Plan" is the only badge. Always GREEN (badge + border).
+ *   - The CURRENT plan card has NO disabled "Active" button. The badge
+ *     and border say "this is yours". The bottom slot is taken by the
+ *     PRIMARY action a current user actually wants: "Buy more minutes".
+ *   - NO decorative icons on plan cards. Generic lucide icons (rocket,
+ *     lightning, building) read as "AI-generated stock pricing page".
+ *     The plan name + price + features carry the meaning on their own;
+ *     icons added noise without information. The data layer keeps the
+ *     `icon` field on Plan in case we ever want to re-introduce it
+ *     somewhere else (marketing site, comparison tables) but the
+ *     billing UI ignores it.
+ *   - Free plan keeps a disabled "Active by default" pill since it
+ *     doesn't have the green badge.
+ *   - All four cards stretch to the same height (alignItems: 'stretch'
+ *     on the grid) and the action row sits at the same vertical
+ *     position via marginTop: 'auto' on the bottom slot.
+ *   - Top usage cards (Minutes Used / Current Pack / Minutes Remaining)
+ *     all use the same green accent. Previously each card had its own
+ *     color (amber / blue / green) which made the page feel busy and
+ *     unfocused — three same-color stats reads as one clean dashboard.
+ *
  * Payment provider: Cashfree (replaced Razorpay 2026-05-03).
- *   - The order route returns a `paymentSessionId` from Cashfree.
- *   - The Cashfree JS SDK is loaded lazily from sdk.cashfree.com and
- *     opens a Drop-in modal on `cashfree.checkout(...)`.
- *   - Unlike Razorpay there's no client signature; verify re-fetches the
- *     order from Cashfree and trusts `order_status === 'PAID'`.
  *
  * Tier rules — enforced by lib/billing-rules.ts and mirrored here:
  *   - Pack at same/higher tier: always buyable.
- *   - Pack at lower tier: locked while minutes_used < minutes_limit. Once
- *     all minutes are consumed, the lock lifts.
+ *   - Pack at lower tier: locked while minutes_used < minutes_limit.
  *   - Custom-minute top-up: only on the user's CURRENT paid plan card.
- *     Free users see no custom-buy field — must buy a pack first.
  *
  * Cross-component sync:
- *   After every successful purchase we also dispatch ORG_UPDATED_EVENT on
- *   `window` so the Topbar (and any other listener) refetches and stays
- *   in sync without needing a hard reload.
+ *   After every successful purchase we dispatch ORG_UPDATED_EVENT on
+ *   `window` so the Topbar refetches and stays in sync without reload.
  */
 
-// Map icon names from plan config to lucide-react components.
-const ICON_MAP = { Sparkles, Rocket, Zap, Building2 } as const;
+// Brand-agnostic green used for "current plan" / "owned" treatment AND
+// for the top usage stat cards. Falls back to a hard-coded hex if --green
+// CSS var isn't defined in this theme.
+const CURRENT_PLAN_COLOR = 'var(--green, #22c55e)';
+
+// Quick-pick chips for common topup amounts. Always shown above the
+// custom input so users can buy without typing for the common cases.
+const QUICK_TOPUP_AMOUNTS = [100, 500, 1000] as const;
+
+// Shared height for primary action buttons in the plan card grid.
+const PACK_BUTTON_HEIGHT = 36;
 
 // URLs for Cashfree's web SDK by environment. Loaded lazily on first buy.
 const CASHFREE_SDK_URL: Record<string, string> = {
@@ -76,6 +99,9 @@ export default function Billing() {
   // map) because only one card ever shows the field at a time.
   const [customMinStr, setCustomMinStr] = useState<string>('');
 
+  // Whether the topup panel is expanded.
+  const [topupOpen, setTopupOpen] = useState<boolean>(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -110,8 +136,6 @@ export default function Billing() {
    */
   const refreshOrg = async () => {
     try {
-      // cache: 'no-store' — bypass any HTTP cache so we always see the
-      // post-purchase row, not a stale read.
       const res = await fetch('/api/onboarding', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
@@ -119,7 +143,6 @@ export default function Billing() {
     } catch (err) {
       console.error('Failed to refresh org:', err);
     } finally {
-      // Always dispatch — even on a fetch failure the Topbar can retry.
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event(ORG_UPDATED_EVENT));
       }
@@ -147,7 +170,10 @@ export default function Billing() {
     if (verified.success) {
       setSuccess(loadingKey);
       setTimeout(() => setSuccess(null), 4000);
-      if (customMins) setCustomMinStr('');
+      if (customMins) {
+        setCustomMinStr('');
+        setTopupOpen(false);
+      }
       await refreshOrg();
     } else {
       setErrorMsg(verified.error || 'Payment verification failed.');
@@ -165,7 +191,6 @@ export default function Billing() {
     setErrorMsg(null);
 
     try {
-      // 1. Server-side: create order with Cashfree, get payment_session_id.
       const orderRes = await fetch('/api/billing/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,42 +202,32 @@ export default function Billing() {
       const order = await orderRes.json();
 
       if (!orderRes.ok) {
-        // Surface server-side rule errors (e.g. downgrade lock, free tier).
         setErrorMsg(order.error || 'Could not start payment.');
         setLoading(null);
         return;
       }
 
-      // 2. Demo mode (no Cashfree credentials) — simulate success.
       if (order.demo) {
         await verifyPayment(order.orderId, planId, customMins, loadingKey);
         setLoading(null);
         return;
       }
 
-      // 3. Load the Cashfree JS SDK and open the checkout modal.
       const env: 'sandbox' | 'production' =
         order.environment === 'production' ? 'production' : 'sandbox';
       const cashfree = await loadCashfreeSdk(env);
 
-      // 4. Open Drop-in. `redirectTarget: '_modal'` keeps the user on this
-      //    page; `_self` would redirect away. Drop-in resolves the promise
-      //    once the modal closes — successful or not.
       const result = await cashfree.checkout({
         paymentSessionId: order.paymentSessionId,
         redirectTarget: '_modal',
       });
 
       if (result?.error) {
-        // User cancelled or payment failed in the modal. The order id is
-        // still valid; we don't credit anything here.
         setErrorMsg(result.error.message || 'Payment was not completed.');
         setLoading(null);
         return;
       }
 
-      // 5. Modal closed without error — confirm with our server, which
-      //    re-fetches the order from Cashfree's API.
       await verifyPayment(order.orderId, planId, customMins, loadingKey);
     } catch (err) {
       console.error('Payment error:', err);
@@ -225,15 +240,11 @@ export default function Billing() {
   const minutesUsed = org?.minutes_used || 0;
   const minutesLimit = org?.minutes_limit || 100;
   const minutePct = Math.min(100, (minutesUsed / Math.max(1, minutesLimit)) * 100);
-  // Important: while we're still loading the org row, fall back to a
-  // sentinel value that doesn't match any plan id. Otherwise `currentPlan`
-  // defaults to 'free' and the Free Trial card flashes "Current Plan"
-  // before the real plan loads — even for paid users. Empty string fails
-  // every `currentPlan === plan.id` check, so no card lights up.
+  // Sentinel empty string while loading — prevents Free Trial from
+  // briefly lighting up as "Current Plan" before real data arrives.
   const currentPlan = loaded ? (org?.plan || 'free').toLowerCase() : '';
   const minutesRemaining = Math.max(0, minutesLimit - minutesUsed);
 
-  // Org snapshot used by the rule helpers. Mirrors the API view.
   const orgState = { plan: currentPlan, minutes_used: minutesUsed, minutes_limit: minutesLimit };
 
   return (
@@ -260,13 +271,16 @@ export default function Billing() {
             </div>
           )}
 
-          {/* Usage — only render once we have real org data to avoid showing default values briefly */}
+          {/* Usage — only render once we have real org data to avoid showing default values briefly.
+              All three stat cards use the same green accent color so the
+              top of the page reads as a calm, unified status bar instead
+              of three competing dashboards. */}
           {loaded ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               {[
-                { label: 'Minutes Used', value: minutesUsed.toLocaleString(), total: `of ${minutesLimit === 999999 ? '∞' : minutesLimit.toLocaleString()}`, pct: minutePct, color: 'var(--amber)' },
-                { label: 'Current Pack', value: currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1), total: 'No expiry', pct: null, color: 'var(--accent)' },
-                { label: 'Minutes Remaining', value: minutesRemaining.toLocaleString(), total: 'Top up anytime', pct: null, color: 'var(--green)' },
+                { label: 'Minutes Used', value: minutesUsed.toLocaleString(), total: `of ${minutesLimit === 999999 ? '∞' : minutesLimit.toLocaleString()}`, pct: minutePct, color: CURRENT_PLAN_COLOR },
+                { label: 'Current Pack', value: currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1), total: 'No expiry', pct: null, color: CURRENT_PLAN_COLOR },
+                { label: 'Minutes Remaining', value: minutesRemaining.toLocaleString(), total: 'Top up anytime', pct: null, color: CURRENT_PLAN_COLOR },
               ].map(u => (
                 <div key={u.label} className="stat-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -297,9 +311,12 @@ export default function Billing() {
             <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 20 }}>
               One-time purchase. Minutes never expire. Once you&apos;re on a paid plan, top up extra minutes anytime at your plan&apos;s rate. Powered by Cashfree.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${PLANS_LIST.length}, 1fr)`, gap: 14 }}>
+            {/* alignItems: 'stretch' makes all cards in the row reach the
+                same height. Combined with `marginTop: 'auto'` on the
+                bottom action wrapper, action elements line up across
+                cards regardless of content above. */}
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${PLANS_LIST.length}, 1fr)`, gap: 14, alignItems: 'stretch' }}>
               {PLANS_LIST.map((plan: Plan) => {
-                const Icon = ICON_MAP[plan.icon];
                 const packLoadingKey = plan.id;
                 const customLoadingKey = `custom-${plan.id}`;
                 const isPackLoading = loading === packLoadingKey;
@@ -307,20 +324,21 @@ export default function Billing() {
                 const isPackSuccess = success === packLoadingKey;
                 const isCustomSuccess = success === customLoadingKey;
                 const isCurrent = currentPlan === plan.id;
-                const borderColor = isCurrent ? plan.color : plan.popular ? plan.color : 'var(--border)';
+                const borderColor = isCurrent ? CURRENT_PLAN_COLOR : 'var(--border)';
 
-                // Downgrade lock check (only relevant once we have org data).
                 const gate = loaded ? canBuyPack(orgState, plan.id) : { allowed: true } as const;
                 const isLocked = !gate.allowed;
 
-                // Custom field shows only on the user's CURRENT card, and only
-                // if that current plan is paid. Free trial gets no custom field.
                 const showCustomField = loaded && isCurrent && !plan.isFree;
 
-                // Custom input — single shared state, only one card uses it.
                 const customNum = customMinStr === '' ? NaN : Number(customMinStr);
                 const customValid = Number.isInteger(customNum) && customNum >= MIN_CUSTOM_MINUTES;
                 const customCost = customValid ? (customNum * plan.perMinPaise) / 100 : 0;
+
+                // Pack purchase button shows on every card EXCEPT the
+                // current paid card — there the bottom slot is taken by
+                // the green "Buy more minutes" button instead.
+                const showPackButton = !isCurrent || plan.isFree;
 
                 return (
                   <div key={plan.id} style={{
@@ -333,24 +351,27 @@ export default function Billing() {
                     flexDirection: 'column',
                     gap: 16,
                     opacity: isLocked ? 0.85 : 1,
+                    boxShadow: isCurrent ? '0 0 0 4px rgba(34, 197, 94, 0.08)' : 'none',
+                    minHeight: '100%',
                   }}>
-                    {(isCurrent || plan.popular) && (
+                    {isCurrent && (
                       <div style={{
                         position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
-                        background: plan.color, color: 'white', borderRadius: 20,
+                        background: CURRENT_PLAN_COLOR,
+                        color: 'white', borderRadius: 20,
                         padding: '3px 14px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        display: 'flex', alignItems: 'center', gap: 4,
                       }}>
-                        {isCurrent ? 'Current Plan' : 'Most Popular'}
+                        <Check size={12} strokeWidth={3} />
+                        Current Plan
                       </div>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon size={20} color={plan.color} />
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 18 }}>{plan.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text3)' }}>{plan.perMin}</div>
-                      </div>
+                    {/* Header: plan name + per-minute rate. No icon — see
+                        visual language note at top of file. */}
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--text)' }}>{plan.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>{plan.perMin}</div>
                     </div>
                     <div>
                       <span style={{ fontSize: 32, fontWeight: 800 }}>{plan.priceDisplay}</span>
@@ -366,90 +387,200 @@ export default function Billing() {
                     }}>
                       {plan.minutesDisplay} included
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+                    {/* Features list — checkmarks use the universal --text3
+                        color instead of the per-plan accent. With the
+                        plan-tinted icon block gone, sticking with one
+                        consistent grey checkmark across all cards keeps
+                        the page calmer. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {plan.features.map(f => (
                         <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                          <Check size={14} color={plan.color} />
+                          <Check size={14} color="var(--text3)" />
                           <span style={{ color: 'var(--text2)' }}>{f}</span>
                         </div>
                       ))}
                     </div>
 
-                    {/* --- Pack purchase button ---
-                        Disabled (in addition to the obvious cases) until org
-                        data has loaded — prevents a click on a card that
-                        looks buyable but might actually be the user's current
-                        plan once data arrives. */}
-                    <button
-                      onClick={() => loaded && !isCurrent && !plan.isFree && !isLocked && handleBuy(plan.id)}
-                      disabled={!loaded || isCurrent || isPackLoading || plan.isFree || isLocked}
-                      style={{
-                        width: '100%', justifyContent: 'center', padding: '12px',
-                        background: !loaded ? 'var(--bg3)' : isCurrent || isLocked ? 'var(--bg3)' : isPackSuccess ? 'var(--green)' : plan.isFree ? 'var(--bg3)' : plan.color,
-                        color: !loaded || isCurrent || plan.isFree || isLocked ? 'var(--text2)' : 'white',
-                        border: !loaded || plan.isFree || isLocked ? '1px solid var(--border)' : 'none',
-                        borderRadius: 10, fontFamily: 'Inter, sans-serif',
-                        fontWeight: 600, fontSize: 14,
-                        cursor: (!loaded || isCurrent || plan.isFree || isLocked) ? 'default' : 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.2s',
-                      }}
-                    >
-                      {!loaded ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /></>
-                        : isPackLoading ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing...</>
-                        : isPackSuccess ? <><Check size={16} /> Purchased!</>
-                        : isCurrent ? 'Current Pack'
-                        : plan.isFree ? 'Active by default'
-                        : isLocked ? <><Lock size={14} /> Use remaining minutes first</>
-                        : `Buy ${plan.name}`}
-                    </button>
+                    {/* --- Pack purchase button (non-current cards) --- */}
+                    {showPackButton && (
+                      <button
+                        onClick={() => loaded && !plan.isFree && !isLocked && handleBuy(plan.id)}
+                        disabled={!loaded || isPackLoading || plan.isFree || isLocked}
+                        style={{
+                          width: '100%',
+                          height: PACK_BUTTON_HEIGHT,
+                          marginTop: 'auto',
+                          padding: '0 12px',
+                          background: !loaded ? 'var(--bg3)'
+                            : isLocked ? 'var(--bg3)'
+                            : isPackSuccess ? CURRENT_PLAN_COLOR
+                            : plan.isFree ? 'var(--bg3)'
+                            : plan.color,
+                          color: !loaded ? 'var(--text2)'
+                            : plan.isFree || isLocked ? 'var(--text2)'
+                            : 'white',
+                          border: !loaded ? '1px solid var(--border)'
+                            : plan.isFree || isLocked ? '1px solid var(--border)'
+                            : 'none',
+                          borderRadius: 8, fontFamily: 'Inter, sans-serif',
+                          fontWeight: 600, fontSize: 13,
+                          lineHeight: 1,
+                          cursor: (!loaded || plan.isFree || isLocked) ? 'default' : 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        {!loaded ? <><Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /></>
+                          : isPackLoading ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing...</>
+                          : isPackSuccess ? <><Check size={14} /> Purchased!</>
+                          : plan.isFree ? 'Active by default'
+                          : isLocked ? <><Lock size={13} /> Use remaining minutes first</>
+                          : `Buy ${plan.name}`}
+                      </button>
+                    )}
 
-                    {/* --- Custom-minute top-up — current paid plan only --- */}
-                    {showCustomField && (
+                    {/* --- "Buy more minutes" button (current paid card) --- */}
+                    {showCustomField && !topupOpen && (
+                      <button
+                        onClick={() => setTopupOpen(true)}
+                        style={{
+                          width: '100%',
+                          height: PACK_BUTTON_HEIGHT,
+                          marginTop: 'auto',
+                          padding: '0 12px',
+                          background: CURRENT_PLAN_COLOR,
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 8,
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: 600, fontSize: 13,
+                          lineHeight: 1,
+                          cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <Plus size={14} strokeWidth={2.5} />
+                        Buy more minutes
+                      </button>
+                    )}
+
+                    {showCustomField && topupOpen && (
                       <div style={{
-                        borderTop: '1px dashed var(--border)',
-                        paddingTop: 14,
+                        marginTop: 'auto',
+                        background: 'rgba(34, 197, 94, 0.06)',
+                        border: '1px solid rgba(34, 197, 94, 0.2)',
+                        borderRadius: 10,
+                        padding: 12,
                         display: 'flex', flexDirection: 'column', gap: 8,
                       }}>
-                        <div style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 500 }}>
-                          Top up extra minutes at {plan.perMin}
-                        </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <input
-                            type="number"
-                            min={MIN_CUSTOM_MINUTES}
-                            step={1}
-                            placeholder={`Min ${MIN_CUSTOM_MINUTES}`}
-                            value={customMinStr}
-                            onChange={e => setCustomMinStr(e.target.value)}
-                            style={{
-                              flex: 1, minWidth: 0, padding: '8px 10px',
-                              background: 'var(--bg3)', color: 'var(--text)',
-                              border: '1px solid var(--border)', borderRadius: 8,
-                              fontSize: 13, fontFamily: 'Inter, sans-serif',
-                            }}
-                          />
+                        {/* Heading + close button */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Plus size={13} color={CURRENT_PLAN_COLOR} strokeWidth={2.5} />
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                              Buy more minutes
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>
+                              · {plan.perMin}
+                            </span>
+                          </div>
                           <button
-                            onClick={() => customValid && handleBuy(plan.id, customNum)}
-                            disabled={!customValid || isCustomLoading}
+                            onClick={() => {
+                              setTopupOpen(false);
+                              setCustomMinStr('');
+                            }}
+                            disabled={isCustomLoading}
+                            aria-label="Cancel"
                             style={{
-                              padding: '8px 12px',
-                              background: isCustomSuccess ? 'var(--green)' : customValid ? plan.color : 'var(--bg3)',
-                              color: customValid || isCustomSuccess ? 'white' : 'var(--text3)',
-                              border: 'none', borderRadius: 8,
-                              fontSize: 13, fontWeight: 600,
-                              cursor: customValid && !isCustomLoading ? 'pointer' : 'default',
-                              whiteSpace: 'nowrap',
-                              display: 'flex', alignItems: 'center', gap: 6,
+                              background: 'transparent', border: 'none',
+                              color: 'var(--text3)', cursor: isCustomLoading ? 'default' : 'pointer',
+                              padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              borderRadius: 4,
                             }}
                           >
-                            {isCustomLoading ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} />
-                              : isCustomSuccess ? <><Check size={14} /> Done</>
-                              : customValid ? `Buy · ₹${customCost.toLocaleString('en-IN')}`
-                              : 'Buy'}
+                            <X size={13} />
                           </button>
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                          Minutes added to your balance. Tier stays unchanged.
+
+                        {/* Quick-pick chips */}
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {QUICK_TOPUP_AMOUNTS.map(amt => {
+                            const selected = customMinStr === String(amt);
+                            return (
+                              <button
+                                key={amt}
+                                onClick={() => setCustomMinStr(String(amt))}
+                                disabled={isCustomLoading}
+                                style={{
+                                  flex: 1,
+                                  height: 30,
+                                  padding: '0 4px',
+                                  background: selected ? CURRENT_PLAN_COLOR : 'var(--bg2)',
+                                  color: selected ? 'white' : 'var(--text)',
+                                  border: `1px solid ${selected ? CURRENT_PLAN_COLOR : 'var(--border)'}`,
+                                  borderRadius: 6,
+                                  fontSize: 12, fontWeight: 600,
+                                  lineHeight: 1,
+                                  cursor: isCustomLoading ? 'default' : 'pointer',
+                                  fontFamily: 'inherit',
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                {amt.toLocaleString()}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom amount input */}
+                        <input
+                          type="number"
+                          min={MIN_CUSTOM_MINUTES}
+                          step={1}
+                          placeholder={`Custom (min ${MIN_CUSTOM_MINUTES})`}
+                          value={customMinStr}
+                          onChange={e => setCustomMinStr(e.target.value)}
+                          disabled={isCustomLoading}
+                          autoFocus
+                          style={{
+                            width: '100%', height: 32, padding: '0 10px',
+                            background: 'var(--bg2)', color: 'var(--text)',
+                            border: '1px solid var(--border)', borderRadius: 6,
+                            fontSize: 12, fontFamily: 'Inter, sans-serif',
+                            outline: 'none',
+                          }}
+                        />
+
+                        {/* Live cost preview + action button */}
+                        <button
+                          onClick={() => customValid && handleBuy(plan.id, customNum)}
+                          disabled={!customValid || isCustomLoading}
+                          style={{
+                            width: '100%',
+                            height: PACK_BUTTON_HEIGHT,
+                            padding: '0 12px',
+                            background: isCustomSuccess ? CURRENT_PLAN_COLOR
+                              : customValid ? CURRENT_PLAN_COLOR
+                              : 'var(--bg3)',
+                            color: customValid || isCustomSuccess ? 'white' : 'var(--text3)',
+                            border: 'none', borderRadius: 8,
+                            fontSize: 13, fontWeight: 600,
+                            lineHeight: 1,
+                            cursor: customValid && !isCustomLoading ? 'pointer' : 'not-allowed',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                            fontFamily: 'inherit',
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          {isCustomLoading ? <><Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing...</>
+                            : isCustomSuccess ? <><Check size={13} /> Minutes added</>
+                            : customValid ? <>Add {customNum.toLocaleString()} min · ₹{customCost.toLocaleString('en-IN')}</>
+                            : <>Pick or enter an amount</>}
+                        </button>
+
+                        <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', lineHeight: 1.4 }}>
+                          Minutes added instantly. Tier stays unchanged.
                         </div>
                       </div>
                     )}
@@ -478,7 +609,7 @@ export default function Billing() {
               <a
                 href="mailto:sales@unntangle.com?subject=uVOIZ%20Enterprise%20Inquiry"
                 style={{
-                  padding: '10px 16px',
+                  padding: '8px 14px',
                   background: 'var(--bg3)',
                   color: 'var(--text)',
                   border: '1px solid var(--border)',
