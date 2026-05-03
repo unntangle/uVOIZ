@@ -32,7 +32,7 @@ export default function TeamPage() {
 
         <PageHeader
           title="Team"
-          subtitle="Manage who can access your uVOIZ workspace"
+          subtitle="Manage who can access your uVOiZ workspace"
           actions={
             <button className="btn btn-primary btn-sm" onClick={() => setShowInvite(true)}>
               <UserPlus size={14} /> Invite Member

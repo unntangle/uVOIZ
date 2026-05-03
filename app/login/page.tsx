@@ -9,7 +9,7 @@ import { loginRedirectUrlForRole } from '@/lib/urls';
 // Testimonials — cycles through these
 const TESTIMONIALS = [
   {
-    quote: "uVOIZ helped us scale from 20 human agents to handling 10,000+ daily calls with just 3 AI voices. Conversion up 32%.",
+    quote: "uVOiZ helped us scale from 20 human agents to handling 10,000+ daily calls with just 3 AI voices. Conversion up 32%.",
     name: "Rohit Sharma",
     role: "Ops Head, Mumbai BPO",
     initial: "R",
@@ -21,7 +21,7 @@ const TESTIMONIALS = [
     initial: "K",
   },
   {
-    quote: "Monthly costs dropped from ₹8L to ₹1.2L while call volume doubled. uVOIZ is a no-brainer for any growing BPO.",
+    quote: "Monthly costs dropped from ₹8L to ₹1.2L while call volume doubled. uVOiZ is a no-brainer for any growing BPO.",
     name: "Arjun Patel",
     role: "Founder, Ahmedabad BPO",
     initial: "A",
@@ -143,8 +143,8 @@ export default function Login() {
           {/* Logo */}
           <div style={{ marginBottom: 40, display: 'inline-block' }}>
             <Image
-              src="/images/uVOIZ-logo.webp"
-              alt="uVOIZ"
+              src="/images/uVOiZ-logo.webp"
+              alt="uVOiZ"
               width={100}
               height={34}
               style={{ objectFit: 'contain', height: 'auto', display: 'block' }}
@@ -340,7 +340,7 @@ export default function Login() {
           userSelect: 'none',
         }}>
           <Image
-            src="/images/uVOIZ-logo.webp"
+            src="/images/uVOiZ-logo.webp"
             alt=""
             width={600}
             height={200}
@@ -388,7 +388,7 @@ export default function Login() {
             marginBottom: 16,
           }}>
             Welcome back to<br />
-            <span className="gradient-text">uVOIZ</span>
+            <span className="gradient-text">uVOiZ</span>
           </h2>
           <p className="stagger stagger-3" style={{
             fontSize: 15,

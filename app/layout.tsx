@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'uVOIZ – AI Telecaller Platform for BPOs',
+  title: 'uVOiZ – AI Telecaller Platform for BPOs',
   description: 'Replace telecallers with AI. Automate outbound calls in Hindi, Tamil, English and more.',
   icons: {
     icon: '/images/fav-icon.webp',

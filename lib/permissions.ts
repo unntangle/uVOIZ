@@ -14,6 +14,12 @@
  *   middleware.ts rewrites /app/* → /t/* before auth checks. /console/*
  *   pass through unchanged. Permission checks below run on the INTERNAL paths.
  *
+ *   NAMING NOTE: The user-facing label for /app/agents is "Assistants".
+ *   The internal route, code identifiers (Agent, AgentCard), API routes
+ *   (/api/agents), and DB schema all still say "agent" — renaming those
+ *   would be a bigger lift with no user benefit. The display label is the
+ *   only thing the customer sees, and that's what changed.
+ *
  * ROLE HIERARCHY:
  *   super_admin  → Unntangle staff. Access to /console/* only.
  *   admin        → BPO owner. Access to /t/* including billing, team, settings.
@@ -108,7 +114,10 @@ export type NavItem = {
 
 export const BPO_NAV: NavItem[] = [
   { label: 'Dashboard',  href: '/app/dashboard',  allowedRoles: ['admin', 'manager'], iconName: 'LayoutDashboard' },
-  { label: 'AI Agents',  href: '/app/agents',     allowedRoles: ['admin', 'manager'], iconName: 'Bot' },
+  // Display label is "Assistants" — internal route stays /app/agents to
+  // avoid touching API routes, code identifiers, and DB schema. The href
+  // is the only thing the router cares about; the label is purely UI.
+  { label: 'Assistants', href: '/app/agents',     allowedRoles: ['admin', 'manager'], iconName: 'Bot' },
   { label: 'Campaigns',  href: '/app/campaigns',  allowedRoles: ['admin', 'manager'], iconName: 'Megaphone' },
   { label: 'Live Calls', href: '/app/calls',      allowedRoles: ['admin', 'manager'], iconName: 'Phone' },
   { label: 'Analytics',  href: '/app/analytics',  allowedRoles: ['admin', 'manager'], iconName: 'BarChart3' },

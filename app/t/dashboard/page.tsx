@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Phone, TrendingUp, Clock, Activity, PauseCircle, Plus, Search, Calendar, ChevronRight, User, Bot, CreditCard, BarChart3 } from 'lucide-react';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
@@ -21,6 +22,7 @@ const Tip = ({ active, payload, label }: any) => {
 };
 
 export default function Dashboard() {
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [calls, setCalls] = useState<Call[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -118,7 +120,14 @@ export default function Dashboard() {
                   style={{ width: 220, paddingLeft: 32, height: 36, fontSize: 13 }}
                 />
               </div>
-              <button className="btn btn-primary btn-sm">
+              {/* Take the user straight to the campaigns page with the
+                  create wizard already opened. The campaigns page reads
+                  the `?new=1` query string and auto-opens its existing
+                  showNew flow — saves the customer a second click. */}
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => router.push('/app/campaigns?new=1')}
+              >
                 <Plus size={14} /> New Campaign
               </button>
             </>
@@ -224,7 +233,7 @@ export default function Dashboard() {
                 <a href="/app/campaigns" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>View all →</a>
               </div>
               <table className="table">
-                <thead><tr><th>Campaign</th><th>Agent</th><th>Progress</th><th>Conv.</th><th></th></tr></thead>
+                <thead><tr><th>Campaign</th><th>Assistant</th><th>Progress</th><th>Conv.</th><th></th></tr></thead>
                 <tbody>
                   {activeCampaigns.length > 0 ? activeCampaigns.map(c => {
                     const pct = Math.round((c.called / c.totalContacts) * 100);
@@ -270,7 +279,7 @@ export default function Dashboard() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
             {[
-              { label: 'New Agent', icon: Bot, href: '/app/agents', color: 'var(--accent)' },
+              { label: 'New Assistant', icon: Bot, href: '/app/agents', color: 'var(--accent)' },
               { label: 'Upload Contacts', icon: User, href: '/app/campaigns', color: 'var(--green)' },
               { label: 'View Analytics', icon: TrendingUp, href: '/app/analytics', color: 'var(--amber)' },
               { label: 'Buy Minutes', icon: CreditCard, href: '/app/billing', color: 'var(--red)' },
@@ -324,7 +333,7 @@ export default function Dashboard() {
                       Call with <span style={{ fontWeight: 600 }}>{c.contactName}</span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-                      {c.campaignName} · Agent: {c.agentName}
+                      {c.campaignName} · Assistant: {c.agentName}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>

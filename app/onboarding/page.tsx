@@ -34,7 +34,7 @@ export default function Onboarding() {
       period: '/month',
       minutes: '1,000 minutes',
       agents: '1 AI agent',
-      tagline: 'Try uVOIZ on a small campaign',
+      tagline: 'Try uVOiZ on a small campaign',
     },
     {
       id: 'pro',
@@ -72,7 +72,7 @@ export default function Onboarding() {
   };
 
   const stepHeadlines = [
-    { title: 'Welcome to uVOIZ', subtitle: "Let's set up your BPO account in under 2 minutes." },
+    { title: 'Welcome to uVOiZ', subtitle: "Let's set up your BPO account in under 2 minutes." },
     { title: 'Languages', subtitle: 'Pick the languages your AI agents will speak. You can change this later.' },
     { title: 'Choose your plan', subtitle: 'Free for 14 days. No credit card required to start.' },
   ];
@@ -88,12 +88,16 @@ export default function Onboarding() {
       padding: '40px 20px',
     }}>
       <div style={{ width: '100%', maxWidth: 440 }}>
-        {/* Logo (centered, with "BY UNNTANGLE" tag — matches login) */}
+        {/* Logo (centered, with "BY UNNTANGLE" tag — matches login).
+            Filename uses lowercase `i` — `uVOiZ-logo.webp`. Vercel/Linux
+            is case-sensitive about static asset paths, so a lookup like
+            `uVOIZ-logo.webp` 404s in production even though it works on
+            Windows dev locally. */}
         <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'center' }}>
           <div>
             <Image
-              src="/images/uVOIZ-logo.webp"
-              alt="uVOIZ"
+              src="/images/uVOiZ-logo.webp"
+              alt="uVOiZ"
               width={100}
               height={34}
               style={{ objectFit: 'contain', height: 'auto', display: 'block' }}
@@ -411,7 +415,7 @@ export default function Onboarding() {
                 {loading ? (
                   <><Loader2 size={15} style={{ animation: 'spin 0.8s linear infinite' }} /> Setting up...</>
                 ) : (
-                  <>{form.plan === 'later' ? 'Start free trial' : 'Launch uVOIZ'} <ArrowRight size={15} /></>
+                  <>{form.plan === 'later' ? 'Start free trial' : 'Launch uVOiZ'} <ArrowRight size={15} /></>
                 )}
               </PrimaryButton>
             </div>

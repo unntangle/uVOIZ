@@ -81,9 +81,11 @@ export default function ConsoleSidebar({ userName, userEmail }: ConsoleSidebarPr
       <div style={{ padding: '14px 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <div>
+            {/* Logo filename uses lowercase `i` — `uVOiZ-logo.webp`.
+                Vercel/Linux is case-sensitive; do NOT change to `uVOIZ`. */}
             <Image
-              src="/images/uVOIZ-logo.webp"
-              alt="uVOIZ"
+              src="/images/uVOiZ-logo.webp"
+              alt="uVOiZ"
               width={80}
               height={28}
               style={{ objectFit: 'contain', height: 'auto', display: 'block' }}
@@ -128,7 +130,7 @@ export default function ConsoleSidebar({ userName, userEmail }: ConsoleSidebarPr
               fontSize: 13, fontWeight: 600, color: 'var(--text)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
-              uVOIZ Console
+              uVOiZ Console
             </div>
           </div>
         </div>

@@ -59,8 +59,8 @@ export default function SignUp() {
         <div style={{ marginBottom: 40, display: 'flex', justifyContent: 'center' }}>
           <div>
             <Image
-              src="/images/uVOIZ-logo.webp"
-              alt="uVOIZ"
+              src="/images/uVOiZ-logo.webp"
+              alt="uVOiZ"
               width={100}
               height={34}
               style={{ objectFit: 'contain', height: 'auto', display: 'block' }}

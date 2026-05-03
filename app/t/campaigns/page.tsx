@@ -1,8 +1,12 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
-import { PlayCircle, PauseCircle, MoreVertical, Plus, Search, Megaphone, Loader2, Upload, FileText, CheckCircle2, ArrowRight } from 'lucide-react';
+import Dropdown from '@/components/Dropdown';
+import MoreMenu from '@/components/MoreMenu';
+import ConfirmDialog from '@/components/ConfirmDialog';
+import { PlayCircle, PauseCircle, Plus, Search, Megaphone, Loader2, Upload, FileText, CheckCircle2, ArrowRight } from 'lucide-react';
 import { Campaign, Agent } from '@/types';
 
 const STATUS_BADGE: Record<string, string> = {
@@ -14,7 +18,24 @@ const CATEGORY_EMOJI: Record<string, string> = {
   Insurance: '🛡️', Banking: '🏦', Survey: '📋', Loans: '💰', Sales: '📞',
 };
 
+// Filter options for the campaign list status filter at the top of the page.
+// Defined outside the component so the array reference is stable across
+// renders — the Dropdown's `options` prop is then referentially stable.
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all',       label: 'All Status' },
+  { value: 'active',    label: 'Active' },
+  { value: 'paused',    label: 'Paused' },
+  { value: 'draft',     label: 'Draft' },
+  { value: 'completed', label: 'Completed' },
+];
+
+// Language dropdown options for the wizard. Built from LANG so the source
+// of truth stays in one place.
+const LANG_OPTIONS = Object.entries(LANG).map(([value, label]) => ({ value, label }));
+
 export default function Campaigns() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +53,30 @@ export default function Campaigns() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // Action state for the kebab menu (Rename / Duplicate / Delete) and
+  // the Start/Pause toggle. Page-level state means a single source of
+  // truth, easier optimistic UI, and only one operation can be in flight
+  // at a time.
+  const [renamingId, setRenamingId]   = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<Campaign | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError]     = useState<string | null>(null); // delete failed — shown INSIDE the dialog
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId]       = useState<string | null>(null); // status toggle in flight (UI feedback)
+  const [actionError, setActionError] = useState<string | null>(null); // rename/duplicate/toggle — NOT delete
+
+  // Allow other pages (e.g. the Dashboard "New Campaign" button) to deep
+  // link straight into the create wizard via /app/campaigns?new=1.
+  // After auto-opening we strip the param so the URL doesn't carry stale
+  // intent and a refresh on this page doesn't re-open the wizard.
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowNew(true);
+      router.replace('/app/campaigns');
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     async function fetchData() {
@@ -78,7 +123,69 @@ export default function Campaigns() {
     }
   }, [selectedCampaign]);
 
-  const toggle = (id: string) => setCampaigns(cs => cs.map(c => c.id === id ? { ...c, status: c.status === 'active' ? 'paused' : 'active' } as Campaign : c));
+  /**
+   * Toggle a campaign's status between active and paused, and persist
+   * to the DB. Previously this was a purely-local setState, which meant:
+   *
+   *   1. The change didn't survive a refetch (back→forward made the
+   *      page look "broken" — the click had no lasting effect).
+   *   2. The detail view's status badge was reading from
+   *      `selectedCampaign`, which the local toggle never updated, so
+   *      the click did nothing visible until the user navigated away
+   *      and came back.
+   *
+   * Now the click PATCHes /api/campaigns/[id], gets the canonical row
+   * back, and writes it into BOTH `campaigns` (so the list view shows
+   * the new badge) AND `selectedCampaign` (so the detail view re-renders
+   * with the new status immediately). The DB is the single source of
+   * truth — local state mirrors what the server returned.
+   *
+   * `togglingId` lets the button render a disabled in-flight state so a
+   * user can't double-click and queue two PATCHes against the same row.
+   *
+   * Note: the dialer cron is responsible for marking a campaign as
+   * `completed` once its contact queue drains. We don't try to set that
+   * from the UI — see ALLOWED_STATUS_TRANSITIONS in the route handler.
+   */
+  const toggleStatus = async (id: string) => {
+    const current = campaigns.find(c => c.id === id) || (selectedCampaign?.id === id ? selectedCampaign : null);
+    if (!current) return;
+
+    // 'active' flips to 'paused'; everything else (draft, paused) flips
+    // to 'active'. Same rule as the old local-only toggle, just now
+    // also persisted.
+    const next = current.status === 'active' ? 'paused' : 'active';
+
+    setActionError(null);
+    setTogglingId(id);
+    try {
+      const res = await fetch(`/api/campaigns/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error || 'Failed to update campaign status');
+        return;
+      }
+      const data = await res.json();
+      if (data.campaign) {
+        // Splice the canonical row into the list — preserves any local
+        // counts (totalContacts, called, etc.) that the API row might
+        // not include but our existing card defaults handle anyway.
+        setCampaigns(prev => prev.map(c => c.id === id ? { ...c, ...data.campaign } : c));
+        // Also keep the detail view in sync if we're looking at this
+        // campaign. Without this the user would click "Start Campaign",
+        // see no change, and assume the button was broken.
+        setSelectedCampaign(prev => prev && prev.id === id ? { ...prev, ...data.campaign } : prev);
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to update campaign status');
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,8 +222,8 @@ export default function Campaigns() {
               setContacts(data.contacts || []);
             }
             // Update local campaign stat
-            setCampaigns(cs => cs.map(c => c.id === selectedCampaign.id ? { ...c, totalContacts: c.totalContacts + parsedContacts.length } as Campaign : c));
-            setSelectedCampaign(prev => prev ? { ...prev, totalContacts: prev.totalContacts + parsedContacts.length } as Campaign : null);
+            setCampaigns(cs => cs.map(c => c.id === selectedCampaign.id ? { ...c, totalContacts: (c.totalContacts || 0) + parsedContacts.length } as Campaign : c));
+            setSelectedCampaign(prev => prev ? { ...prev, totalContacts: (prev.totalContacts || 0) + parsedContacts.length } as Campaign : null);
           }
         } catch (err) {
           console.error("Upload failed", err);
@@ -128,15 +235,26 @@ export default function Campaigns() {
     reader.readAsText(file);
   };
 
+  // Filter list — guard against missing `name` so a partial/fresh campaign
+  // row from the API doesn't crash the whole list view with
+  // "Cannot read properties of undefined (reading 'toLowerCase')".
   const filtered = campaigns
     .filter(c => filter === 'all' ? true : c.status === filter)
-    .filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
+    .filter(c => (c.name || '').toLowerCase().includes(query.toLowerCase()));
 
-  // Group by recency
+  // Group by recency. If a campaign has no `createdAt` (very fresh insert,
+  // some API paths return rows before the timestamp is serialized) we
+  // treat it as "now" so it shows up under "This week" rather than
+  // silently disappearing into the gap between buckets.
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const thisWeek = filtered.filter(c => new Date(c.createdAt) > weekAgo);
-  const earlier = filtered.filter(c => new Date(c.createdAt) <= weekAgo);
+  const createdAtOrNow = (c: Campaign) => {
+    if (!c.createdAt) return now;
+    const d = new Date(c.createdAt);
+    return isNaN(d.getTime()) ? now : d;
+  };
+  const thisWeek = filtered.filter(c => createdAtOrNow(c) > weekAgo);
+  const earlier  = filtered.filter(c => createdAtOrNow(c) <= weekAgo);
 
   const handleCreateCampaign = async () => {
     if (!form.name) return;
@@ -227,6 +345,131 @@ export default function Campaigns() {
     if (e.target) e.target.value = '';
   };
 
+  // ─── Kebab menu handlers (Rename / Duplicate / Delete) ───
+  // Each follows the same shape as the agents page so the two screens
+  // behave identically. See app/t/agents/page.tsx for inline notes on
+  // why the page owns this state instead of the card.
+
+  const startRename = (c: Campaign) => {
+    setActionError(null);
+    setRenamingId(c.id);
+    setRenameDraft(c.name || '');
+  };
+  const cancelRename = () => {
+    setRenamingId(null);
+    setRenameDraft('');
+  };
+  const commitRename = async () => {
+    if (!renamingId) return;
+    const next = renameDraft.trim();
+    if (!next) { cancelRename(); return; }
+
+    const current = campaigns.find(c => c.id === renamingId);
+    if (current && current.name === next) { cancelRename(); return; }
+
+    try {
+      const res = await fetch(`/api/campaigns/${renamingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error || 'Failed to rename campaign');
+        return;
+      }
+      const data = await res.json();
+      if (data.campaign) {
+        // The PATCH endpoint returns the row joined with `agents(name)`,
+        // matching the shape of the campaigns list query. We splice it
+        // in by id so the card picks up the new name immediately.
+        setCampaigns(prev => prev.map(c => c.id === renamingId ? { ...c, ...data.campaign } : c));
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to rename campaign');
+    } finally {
+      cancelRename();
+    }
+  };
+
+  const handleDuplicate = async (c: Campaign) => {
+    setActionError(null);
+    setDuplicatingId(c.id);
+    try {
+      const res = await fetch(`/api/campaigns/${c.id}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error || 'Failed to duplicate campaign');
+        return;
+      }
+      const data = await res.json();
+      if (data.campaign) {
+        setCampaigns(prev => [data.campaign, ...prev]);
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to duplicate campaign');
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
+  /**
+   * Delete flow — see app/t/agents/page.tsx for full notes on why
+   * delete failures stay INSIDE the ConfirmDialog rather than leaking
+   * out as a page-level banner. tl;dr: the banner used to render BEHIND
+   * the open modal which made the error feel detached from the action,
+   * and on a busy page (like this one with the cards underneath) it
+   * also looked broken. Inline-in-dialog keeps focus on the action.
+   */
+  const askDelete = (c: Campaign) => {
+    setActionError(null);
+    setDeleteError(null);
+    setPendingDelete(c);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteLoading) return;
+    setPendingDelete(null);
+    setDeleteError(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/campaigns/${pendingDelete.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        // Stay open with the error inline. Most common cause is a 409 —
+        // the campaign has call history and can't be removed yet.
+        setDeleteError(data.error || 'Failed to delete campaign');
+        return;
+      }
+      setCampaigns(prev => prev.filter(c => c.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Failed to delete campaign');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Build assistant options inside the render path (rather than at module
+  // scope) because `agents` is fetched async and changes over the
+  // component's lifetime. Rebuilding the array on every render is
+  // cheap — a handful of strings — and keeps the data flow simple.
+  const assistantOptions = agents.length === 0
+    ? [{ value: '', label: 'No assistants available' }]
+    : agents.map(a => ({ value: a.id, label: a.name }));
+
+  // Detail-view toggle button is a chunk of UI we want to express once
+  // rather than inline in the JSX, since it has loading state and a
+  // disabled-while-in-flight rule. Computed from the live status so it
+  // re-renders instantly the moment toggleStatus updates state.
+  const detailToggling = !!selectedCampaign && togglingId === selectedCampaign.id;
+  const detailIsActive = selectedCampaign?.status === 'active';
+
   return (
     <>
       <Topbar crumbs={[
@@ -252,18 +495,16 @@ export default function Campaigns() {
                     style={{ width: 240, paddingLeft: 32, height: 36, fontSize: 13 }}
                   />
                 </div>
-                <select
-                  className="select"
+                {/* Status filter — themed Dropdown replaces native <select>
+                    so the open list shows our --bg2/--accent tokens
+                    instead of the OS-default white menu. */}
+                <Dropdown
                   value={filter}
-                  onChange={e => setFilter(e.target.value as any)}
-                  style={{ width: 140, height: 36, fontSize: 13 }}
-                >
-                  <option value="all">All Status</option>
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="draft">Draft</option>
-                  <option value="completed">Completed</option>
-                </select>
+                  onChange={(v) => setFilter(v as any)}
+                  options={STATUS_FILTER_OPTIONS}
+                  width={140}
+                  compact
+                />
                 <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>
                   <Plus size={14} /> New Campaign
                 </button>
@@ -274,8 +515,23 @@ export default function Campaigns() {
 
         <main style={{ flex: 1, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 28, background: 'var(--bg)' }}>
 
+          {/* Page-level banner is for rename/duplicate/toggle failures.
+              Delete failures show INSIDE the ConfirmDialog so the message
+              stays attached to the action. Hidden when the dialog is
+              open so a stale error doesn't render behind the modal. */}
+          {actionError && !pendingDelete && (
+            <ErrorBanner message={actionError} onDismiss={() => setActionError(null)} />
+          )}
+
           {selectedCampaign ? (
-            <div className="fade-in" style={{ maxWidth: 900, margin: '0 auto', width: '100%' }}>
+            // Campaign detail view — left-aligned to match the rest of the
+            // app (list view, agents page, dashboard). Previously this was
+            // `margin: '0 auto'` which centered the column and left a wide
+            // empty gutter on the right that looked out of step with every
+            // other tenant page. Cap at 1100px so the two-column grid
+            // (contacts + sidebar) stays readable on ultra-wide screens
+            // without being locked into a narrow centered column.
+            <div className="fade-in" style={{ maxWidth: 1100, margin: '0', width: '100%' }}>
               <button 
                 onClick={() => setSelectedCampaign(null)}
                 style={{ 
@@ -294,14 +550,29 @@ export default function Campaigns() {
                 <div>
                   <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{selectedCampaign.name}</h1>
                   <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 13, color: 'var(--text3)' }}>
-                    <span>Agent: <span style={{ color: 'var(--text2)', fontWeight: 500 }}>{selectedCampaign.agentName || 'Default Agent'}</span></span>
+                    <span>Assistant: <span style={{ color: 'var(--text2)', fontWeight: 500 }}>{selectedCampaign.agentName || 'Default Assistant'}</span></span>
                     <span>Language: <span style={{ color: 'var(--text2)', fontWeight: 500 }}>{LANG[selectedCampaign.language] || selectedCampaign.language}</span></span>
                     <span className={`badge ${STATUS_BADGE[selectedCampaign.status]}`} style={{ padding: '2px 8px' }}>{selectedCampaign.status}</span>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
-                  <button className="btn btn-ghost" onClick={() => toggle(selectedCampaign.id)}>
-                    {selectedCampaign.status === 'active' ? <><PauseCircle size={16} /> Pause Campaign</> : <><PlayCircle size={16} /> Start Campaign</>}
+                  {/* Disable while the PATCH is in flight so a user can't
+                      double-click and queue two state flips. The label
+                      reads from selectedCampaign.status which is updated
+                      synchronously when the toggle resolves, so the
+                      moment the request returns the button visibly
+                      switches to the new label. */}
+                  <button
+                    className="btn btn-ghost"
+                    disabled={detailToggling}
+                    style={{ opacity: detailToggling ? 0.6 : 1, cursor: detailToggling ? 'wait' : 'pointer' }}
+                    onClick={() => toggleStatus(selectedCampaign.id)}
+                  >
+                    {detailToggling
+                      ? <><Loader2 size={16} className="spin" /> {detailIsActive ? 'Pausing…' : 'Starting…'}</>
+                      : detailIsActive
+                        ? <><PauseCircle size={16} /> Pause Campaign</>
+                        : <><PlayCircle size={16} /> Start Campaign</>}
                   </button>
                 </div>
               </div>
@@ -376,10 +647,10 @@ export default function Campaigns() {
                     <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
                         <span color="var(--text3)">Completion</span>
-                        <span style={{ fontWeight: 600 }}>{selectedCampaign.totalContacts > 0 ? Math.round(((selectedCampaign.called || 0) / selectedCampaign.totalContacts) * 100) : 0}%</span>
+                        <span style={{ fontWeight: 600 }}>{(selectedCampaign.totalContacts || 0) > 0 ? Math.round(((selectedCampaign.called || 0) / (selectedCampaign.totalContacts || 1)) * 100) : 0}%</span>
                       </div>
                       <div className="progress" style={{ height: 6 }}>
-                        <div className="progress-fill" style={{ width: `${selectedCampaign.totalContacts > 0 ? Math.round(((selectedCampaign.called || 0) / selectedCampaign.totalContacts) * 100) : 0}%` }} />
+                        <div className="progress-fill" style={{ width: `${(selectedCampaign.totalContacts || 0) > 0 ? Math.round(((selectedCampaign.called || 0) / (selectedCampaign.totalContacts || 1)) * 100) : 0}%` }} />
                       </div>
                     </div>
                   </div>
@@ -441,7 +712,7 @@ export default function Campaigns() {
               {wizardStep === 1 && (
                 <div className="card" style={{ padding: 32 }}>
                   <h2 style={{ fontWeight: 700, fontSize: 22, marginBottom: 8 }}>Campaign details</h2>
-                  <p style={{ color: 'var(--text3)', marginBottom: 28, fontSize: 14 }}>Name your campaign and pick the AI agent that will run it.</p>
+                  <p style={{ color: 'var(--text3)', marginBottom: 28, fontSize: 14 }}>Name your campaign and pick the assistant that will run it.</p>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     {[
@@ -457,32 +728,28 @@ export default function Campaigns() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                       <div>
                         <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Language</label>
-                        <select className="select" style={{ width: '100%' }} value={form.language} onChange={e => setForm(p => ({ ...p, language: e.target.value }))}>
-                          {Object.entries(LANG).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                        </select>
+                        <Dropdown
+                          value={form.language}
+                          onChange={(v) => setForm(p => ({ ...p, language: v }))}
+                          options={LANG_OPTIONS}
+                        />
                       </div>
                       <div>
-                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>AI Agent</label>
-                        <select
-                          className="select"
-                          style={{ width: '100%' }}
+                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Assistant</label>
+                        <Dropdown
                           value={form.agentId}
-                          onChange={e => setForm(p => ({ ...p, agentId: e.target.value }))}
+                          onChange={(v) => setForm(p => ({ ...p, agentId: v }))}
+                          options={assistantOptions}
                           disabled={agents.length === 0}
-                        >
-                          {agents.length === 0 ? (
-                            <option value="">No agents available</option>
-                          ) : (
-                            agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
-                          )}
-                        </select>
+                          placeholder={agents.length === 0 ? 'No assistants available' : 'Select an assistant…'}
+                        />
                       </div>
                     </div>
 
                     <div>
                       <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Call Script</label>
                       <textarea className="input" rows={6} placeholder="Hello, I am calling from..." style={{ resize: 'none' }} value={form.script} onChange={e => setForm(p => ({ ...p, script: e.target.value }))} />
-                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>This is what the AI agent will say when the contact answers.</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>This is what the assistant will say when the contact answers.</div>
                     </div>
 
                     <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
@@ -492,7 +759,7 @@ export default function Campaigns() {
                         onClick={() => setWizardStep(2)}
                         disabled={!form.name || !form.agentId}
                       >
-                        {agents.length === 0 ? 'Create an Agent first' : <>Continue <ArrowRight size={14} /></>}
+                        {agents.length === 0 ? 'Create an Assistant first' : <>Continue <ArrowRight size={14} /></>}
                       </button>
                     </div>
                   </div>
@@ -625,7 +892,7 @@ export default function Campaigns() {
                       { label: 'Campaign name', value: form.name || '—' },
                       { label: 'Category', value: form.roomType || '—' },
                       { label: 'Language', value: LANG[form.language] || form.language },
-                      { label: 'AI Agent', value: agents.find(a => a.id === form.agentId)?.name || '—' },
+                      { label: 'Assistant', value: agents.find(a => a.id === form.agentId)?.name || '—' },
                       { label: 'Contacts to import', value: pendingContacts.length > 0 ? `${pendingContacts.length.toLocaleString()} from ${pendingFileName || 'CSV'}` : 'None (add later)' },
                       { label: 'Script preview', value: form.script ? (form.script.length > 80 ? form.script.slice(0, 80) + '…' : form.script) : '—' },
                     ].map((row, i, arr) => (
@@ -670,7 +937,24 @@ export default function Campaigns() {
                       This week
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                      {thisWeek.map(c => <CampaignCard key={c.id} c={c} onToggle={toggle} onClick={() => setSelectedCampaign(c)} />)}
+                      {thisWeek.map(c => (
+                        <CampaignCard
+                          key={c.id}
+                          c={c}
+                          onToggle={toggleStatus}
+                          isToggling={togglingId === c.id}
+                          onClick={() => setSelectedCampaign(c)}
+                          isRenaming={renamingId === c.id}
+                          renameDraft={renameDraft}
+                          onRenameDraftChange={setRenameDraft}
+                          onRenameCommit={commitRename}
+                          onRenameCancel={cancelRename}
+                          isDuplicating={duplicatingId === c.id}
+                          onStartRename={() => startRename(c)}
+                          onDuplicate={() => handleDuplicate(c)}
+                          onAskDelete={() => askDelete(c)}
+                        />
+                      ))}
                     </div>
                   </section>
                 )}
@@ -681,7 +965,24 @@ export default function Campaigns() {
                       Earlier
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                      {earlier.map(c => <CampaignCard key={c.id} c={c} onToggle={toggle} onClick={() => setSelectedCampaign(c)} />)}
+                      {earlier.map(c => (
+                        <CampaignCard
+                          key={c.id}
+                          c={c}
+                          onToggle={toggleStatus}
+                          isToggling={togglingId === c.id}
+                          onClick={() => setSelectedCampaign(c)}
+                          isRenaming={renamingId === c.id}
+                          renameDraft={renameDraft}
+                          onRenameDraftChange={setRenameDraft}
+                          onRenameCommit={commitRename}
+                          onRenameCancel={cancelRename}
+                          isDuplicating={duplicatingId === c.id}
+                          onStartRename={() => startRename(c)}
+                          onDuplicate={() => handleDuplicate(c)}
+                          onAskDelete={() => askDelete(c)}
+                        />
+                      ))}
                     </div>
                   </section>
                 )}
@@ -698,17 +999,162 @@ export default function Campaigns() {
           )}
 
         </main>
+
+        <ConfirmDialog
+          open={!!pendingDelete}
+          title="Delete this campaign?"
+          message={pendingDelete
+            ? `"${pendingDelete.name || 'Untitled'}" will be permanently removed. This can't be undone.`
+            : ''}
+          confirmLabel="Delete"
+          loading={deleteLoading}
+          error={deleteError}
+          onConfirm={confirmDelete}
+          onCancel={closeDeleteDialog}
+        />
     </>
   );
 }
 
-function CampaignCard({ c, onToggle, onClick }: { c: Campaign; onToggle: (id: string) => void; onClick?: () => void; }) {
-  const progress = c.totalContacts > 0 ? Math.round((c.called / c.totalContacts) * 100) : 0;
-  const convRate = c.called > 0 ? ((c.converted / c.called) * 100).toFixed(1) : '0';
-  const emoji = CATEGORY_EMOJI[c.roomType] || '📞';
+/**
+ * Inline error banner — same component shape as the agents page version.
+ * Co-located here rather than extracted because each page wants slightly
+ * different placement, and the body is six lines. If this ever grows it
+ * graduates to components/.
+ *
+ * Note: delete failures do NOT come through here — they render inside
+ * the ConfirmDialog so they stay attached to the in-progress action
+ * (and don't render BEHIND the modal, which is what used to happen).
+ */
+function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 6000);
+    return () => clearTimeout(t);
+  }, [message, onDismiss]);
 
   return (
-    <div className="card" onClick={onClick} style={{ display: 'flex', flexDirection: 'column', gap: 14, cursor: 'pointer', transition: 'transform 0.15s, border-color 0.15s' }}
+    <div
+      role="alert"
+      style={{
+        padding: '10px 14px',
+        background: 'var(--red-soft)',
+        border: '1px solid #fecaca',
+        color: 'var(--red)',
+        borderRadius: 8,
+        fontSize: 13,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+      }}
+    >
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+/**
+ * CampaignCard — render-safe defaults for every numeric/string field.
+ *
+ * Same defensive pattern as AgentCard. The /api/campaigns POST endpoint
+ * may return a freshly-inserted row before its DB defaults serialize
+ * back, so `totalContacts`, `called`, `converted`, `agentName`,
+ * `roomType`, `language`, `name`, `status` can all be undefined.
+ *
+ * Without these guards, calling `.toLocaleString()` or `.toFixed()` on
+ * undefined would crash the entire campaigns list view the moment a
+ * fresh campaign appears — which is exactly the worst time to fail
+ * (right after the user clicks "Create campaign"). That's the "blank
+ * page" the user saw: a render error inside a child unmounted everything
+ * inside <main> while the page chrome stayed.
+ *
+ * Fixing in the UI rather than enforcing API defaults keeps the API
+ * contract stable and makes the card resilient to any partial-row
+ * data path (mocks, optimistic updates, etc.).
+ *
+ * Inline rename:
+ *   When `isRenaming` is true the name display swaps for an <input>
+ *   bound to `renameDraft`. Enter commits, Esc/blur cancels — same
+ *   contract as the agents page. Click on the input is stopped from
+ *   bubbling so it doesn't open the campaign detail view.
+ *
+ * Pause/Resume button:
+ *   Now async (used to be local-only). When `isToggling` is true the
+ *   button disables itself and shows a spinner so a fast double-click
+ *   can't queue two PATCHes against the same row.
+ */
+interface CampaignCardProps {
+  c: Campaign;
+  onToggle: (id: string) => void;
+  isToggling: boolean;
+  onClick?: () => void;
+  isRenaming: boolean;
+  renameDraft: string;
+  onRenameDraftChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  isDuplicating: boolean;
+  onStartRename: () => void;
+  onDuplicate: () => void;
+  onAskDelete: () => void;
+}
+
+function CampaignCard({
+  c,
+  onToggle,
+  isToggling,
+  onClick,
+  isRenaming,
+  renameDraft,
+  onRenameDraftChange,
+  onRenameCommit,
+  onRenameCancel,
+  isDuplicating,
+  onStartRename,
+  onDuplicate,
+  onAskDelete,
+}: CampaignCardProps) {
+  const totalContacts = c.totalContacts ?? 0;
+  const called        = c.called        ?? 0;
+  const converted     = c.converted     ?? 0;
+  const name          = c.name          || 'Untitled campaign';
+  const status        = c.status        || 'draft';
+  const language      = c.language      || 'en';
+  const roomType      = c.roomType      || 'Sales';
+  const agentName     = c.agentName     || '—';
+
+  const progress = totalContacts > 0 ? Math.round((called / totalContacts) * 100) : 0;
+  const convRate = called > 0 ? ((converted / called) * 100).toFixed(1) : '0';
+  const emoji = CATEGORY_EMOJI[roomType] || '📞';
+  const statusClass = STATUS_BADGE[status] || 'badge-gray';
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (isRenaming && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isRenaming]);
+
+  return (
+    <div
+      className="card"
+      // Don't open the detail view if we're in the middle of renaming —
+      // the click could come from inside the input or from the user
+      // clicking elsewhere on the card while editing.
+      onClick={(e) => {
+        if (isRenaming) return;
+        onClick?.();
+      }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 14, cursor: 'pointer', transition: 'transform 0.15s, border-color 0.15s' }}
       onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
       onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
     >
@@ -721,17 +1167,41 @@ function CampaignCard({ c, onToggle, onClick }: { c: Campaign; onToggle: (id: st
         }}>
           {emoji}
         </div>
-        <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4 }}>
-          <MoreVertical size={16} />
-        </button>
+        <MoreMenu
+          ariaLabel={`Actions for ${name}`}
+          items={[
+            { label: 'Rename',    onClick: onStartRename, disabled: isRenaming },
+            { label: isDuplicating ? 'Duplicating…' : 'Duplicate', onClick: onDuplicate, disabled: isDuplicating },
+            { label: 'Delete',    onClick: onAskDelete, danger: true },
+          ]}
+        />
       </div>
 
       <div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {c.name}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text3)' }}>
-          {LANG[c.language] || c.language} · {c.totalContacts.toLocaleString()} contacts
+        {isRenaming ? (
+          <input
+            ref={inputRef}
+            className="input"
+            value={renameDraft}
+            // The card's onClick suppresses navigation while renaming,
+            // but stopping propagation here too means the click never
+            // reaches the card at all — slightly cheaper, slightly safer.
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onRenameDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); onRenameCommit(); }
+              else if (e.key === 'Escape') { e.preventDefault(); onRenameCancel(); }
+            }}
+            onBlur={onRenameCommit}
+            style={{ height: 32, padding: '4px 8px', fontSize: 14, fontWeight: 600 }}
+          />
+        ) : (
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {name}
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: isRenaming ? 6 : 0 }}>
+          {LANG[language] || language} · {totalContacts.toLocaleString()} contacts
         </div>
       </div>
 
@@ -744,18 +1214,23 @@ function CampaignCard({ c, onToggle, onClick }: { c: Campaign; onToggle: (id: st
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <span className={`badge ${STATUS_BADGE[c.status]}`}>{c.status}</span>
-        <span className="badge badge-purple">{c.agentName}</span>
+        <span className={`badge ${statusClass}`}>{status}</span>
+        <span className="badge badge-purple">{agentName}</span>
         <span className="badge badge-green">Conv: {convRate}%</span>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
         <button
           className="btn btn-ghost btn-sm"
-          style={{ flex: 1, justifyContent: 'center' }}
+          style={{ flex: 1, justifyContent: 'center', opacity: isToggling ? 0.6 : 1, cursor: isToggling ? 'wait' : 'pointer' }}
+          disabled={isToggling}
           onClick={(e) => { e.stopPropagation(); onToggle(c.id); }}
         >
-          {c.status === 'active' ? <><PauseCircle size={13} /> Pause</> : <><PlayCircle size={13} /> Resume</>}
+          {isToggling
+            ? <><Loader2 size={13} className="spin" /> {status === 'active' ? 'Pausing…' : 'Starting…'}</>
+            : status === 'active'
+              ? <><PauseCircle size={13} /> Pause</>
+              : <><PlayCircle size={13} /> Resume</>}
         </button>
       </div>
     </div>

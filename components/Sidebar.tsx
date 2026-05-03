@@ -53,9 +53,13 @@ export default function Sidebar({
       <div style={{ padding: '14px 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <div>
+            {/* NOTE: filename casing is `uVOiZ-logo.webp` — lowercase `i`.
+                Vercel/Linux is case-sensitive about static asset paths,
+                so a lookup like `uVOIZ-logo.webp` 404s in production
+                even though it works on Windows dev locally. */}
             <Image
-              src="/images/uVOIZ-logo.webp"
-              alt="uVOIZ"
+              src="/images/uVOiZ-logo.webp"
+              alt="uVOiZ"
               width={80}
               height={28}
               style={{ objectFit: 'contain', height: 'auto', display: 'block' }}
