@@ -11,12 +11,13 @@ export async function GET(req: NextRequest) {
     }
 
     if (!supabaseAdmin) {
-      // Return mock data if no db
+      // Return mock data if no db. Plan ids match lib/plans.ts.
       return NextResponse.json({
         orgs: [
-          { id: '1', name: 'Acme BPO', plan: 'enterprise', minutes_used: 45000, minutes_limit: 100000, created_at: new Date().toISOString() },
-          { id: '2', name: 'Global Connect', plan: 'pro', minutes_used: 8500, minutes_limit: 10000, created_at: new Date().toISOString() },
-          { id: '3', name: 'My BPO Company', plan: 'starter', minutes_used: 120, minutes_limit: 1000, created_at: new Date().toISOString() },
+          { id: '1', name: 'Acme BPO',         plan: 'scale',   minutes_used: 1800, minutes_limit: 2500, created_at: new Date().toISOString() },
+          { id: '2', name: 'Global Connect',   plan: 'growth',  minutes_used: 850,  minutes_limit: 1000, created_at: new Date().toISOString() },
+          { id: '3', name: 'My BPO Company',   plan: 'starter', minutes_used: 120,  minutes_limit: 250,  created_at: new Date().toISOString() },
+          { id: '4', name: 'Trial Co',         plan: 'free',    minutes_used: 30,   minutes_limit: 100,  created_at: new Date().toISOString() },
         ]
       });
     }

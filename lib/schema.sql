@@ -4,12 +4,14 @@
 -- ============================================
 
 -- Organizations (one per BPO company)
+-- Plan ids must match lib/plans.ts. If you change them, also update
+-- lib/migrations/002_plans_alignment.sql for existing databases.
 CREATE TABLE IF NOT EXISTS organizations (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
-  plan TEXT DEFAULT 'starter' CHECK (plan IN ('starter', 'pro', 'agency')),
+  plan TEXT DEFAULT 'free' CHECK (plan IN ('free', 'starter', 'growth', 'scale')),
   minutes_used INTEGER DEFAULT 0,
-  minutes_limit INTEGER DEFAULT 1000,
+  minutes_limit INTEGER DEFAULT 100,
   razorpay_subscription_id TEXT,
   razorpay_customer_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),

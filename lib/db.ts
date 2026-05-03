@@ -1,23 +1,45 @@
 import { supabaseAdmin } from './supabase';
 
 // ---- Organizations ----
+/**
+ * Look up an organization by its primary key.
+ *
+ * Note: an earlier Clerk-based auth iteration matched on a `clerk_org_id`
+ * column too. That column no longer exists in the schema (custom auth has
+ * fully replaced Clerk), and any reference to it caused the whole `.or()`
+ * filter to error out — Supabase swallowed the error and returned null,
+ * which API routes then treated as "org not found" with a confusing 404.
+ * Now we match on `id` only, and we propagate real errors so caller code
+ * can choose how to handle them rather than failing silently.
+ */
 export async function getOrg(orgId: string) {
   if (!supabaseAdmin) return null;
-  const { data } = await supabaseAdmin
+  if (!orgId) return null;
+
+  const { data, error } = await supabaseAdmin
     .from('organizations')
     .select('*')
-    .or(`id.eq.${orgId},clerk_org_id.eq.${orgId}`)
-    .single();
+    .eq('id', orgId)
+    .maybeSingle(); // null when no row, instead of throwing PGRST116
+
+  if (error) {
+    console.error('getOrg DB error:', { orgId, error });
+    return null;
+  }
   return data;
 }
 
 export async function createOrg(orgId: string, name: string) {
   if (!supabaseAdmin) return null;
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('organizations')
     .insert({ id: orgId, name })
     .select()
     .single();
+  if (error) {
+    console.error('createOrg DB error:', { orgId, error });
+    return null;
+  }
   return data;
 }
 

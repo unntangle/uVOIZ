@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { createVapiAssistant } from '@/lib/vapi';
+import { isValidPlanId, PLANS } from '@/lib/plans';
 
 /**
  * GET /api/onboarding
@@ -13,21 +14,24 @@ export async function GET(req: NextRequest) {
     const session = await getSessionFromRequest(req);
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    // Default fallback org for users without a real DB row (demo mode or
+    // missing org). Mirrors the Free Trial plan from lib/plans.ts so the
+    // synthesized values match what a real new signup would have.
+    const fallbackOrg = {
+      id: session.orgId,
+      name: session.orgName,
+      plan: session.plan || 'free',
+      minutes_used: 0,
+      minutes_limit: PLANS.free.minutes,
+      phone: null,
+      industry: null,
+      languages: ['en'],
+      plan_deferred: false,
+    };
+
     if (!supabaseAdmin) {
       // No DB configured (demo mode) — return what we have from the session
-      return NextResponse.json({
-        org: {
-          id: session.orgId,
-          name: session.orgName,
-          plan: session.plan,
-          minutes_used: 0,
-          minutes_limit: 1000,
-          phone: null,
-          industry: null,
-          languages: ['en'],
-          plan_deferred: false,
-        },
-      });
+      return NextResponse.json({ org: fallbackOrg });
     }
 
     const { data: org, error } = await supabaseAdmin
@@ -39,19 +43,7 @@ export async function GET(req: NextRequest) {
     if (error || !org) {
       // Org not found in DB (likely a demo user with no real org row).
       // Return a synthesized record from the JWT session so the UI doesn't crash.
-      return NextResponse.json({
-        org: {
-          id: session.orgId,
-          name: session.orgName,
-          plan: session.plan,
-          minutes_used: 0,
-          minutes_limit: 1000,
-          phone: null,
-          industry: null,
-          languages: ['en'],
-          plan_deferred: false,
-        },
-      });
+      return NextResponse.json({ org: fallbackOrg });
     }
 
     return NextResponse.json({ org });
@@ -82,22 +74,35 @@ export async function POST(req: NextRequest) {
     // The first selected language is the "primary" — used for the default agent.
     const primaryLanguage = languageList[0] || 'en';
 
-    // "Decide later" — keep the user on the default trial plan but flag that they haven't chosen.
+    // Plan handling at onboarding:
+    //   - 'later'        → user wants to choose later, keep them on Free Trial
+    //   - valid plan id  → set it as their effective plan
+    //   - anything else  → fall back to Free Trial
+    // Free Trial is the only plan onboarding actually grants for free.
+    // Paid plans must be purchased via /app/billing — onboarding never
+    // grants paid minutes without payment.
     const planDeferred = plan === 'later';
-    const effectivePlan = planDeferred ? 'starter' : (plan || 'starter');
+    const effectivePlan = isValidPlanId(plan) && !PLANS[plan].isFree ? plan : 'free';
 
-    // Update the org with the real company name + onboarding metadata
+    // Update the org with the real company name + onboarding metadata.
+    // We only set `plan` (and matching minutes_limit) when the chosen plan
+    // is the free tier — paid plans go through the Razorpay billing flow.
     if (companyName && session.orgId) {
+      const update: Record<string, unknown> = {
+        name: companyName,
+        phone: phone || null,
+        industry: industry || null,
+        languages: languageList,
+        plan_deferred: planDeferred,
+      };
+      if (effectivePlan === 'free') {
+        update.plan = 'free';
+        update.minutes_limit = PLANS.free.minutes;
+      }
+
       await supabaseAdmin
         .from('organizations')
-        .update({
-          name: companyName,
-          phone: phone || null,
-          industry: industry || null,
-          languages: languageList,
-          plan: effectivePlan,
-          plan_deferred: planDeferred,
-        })
+        .update(update)
         .eq('id', session.orgId);
 
       // Update the user's display name to the company name (was email-prefix placeholder)

@@ -133,9 +133,11 @@ export async function registerUser(
   const passwordHash = await bcrypt.hash(password, 12);
 
   // Create org
+  // New signups default to the Free Trial plan (100 minutes, never expires).
+  // Customers buy a paid pack from /app/billing once they're ready to scale.
   const { data: org, error: orgErr } = await supabaseAdmin
     .from('organizations')
-    .insert({ name: companyName, plan: 'starter', minutes_limit: 1000 })
+    .insert({ name: companyName, plan: 'free', minutes_limit: 100 })
     .select()
     .single();
 
@@ -200,7 +202,7 @@ export async function loginUser(
     name: dbUser.name,
     orgId: org?.id || '',
     orgName: org?.name || '',
-    plan: org?.plan || 'starter',
+    plan: org?.plan || 'free',
     role: dbUser.role,
   };
 
