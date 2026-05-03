@@ -2,9 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import { canAccess, PUBLIC_ROUTES, type Role } from './lib/permissions';
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'voiceai_jwt_secret_change_in_production_2024'
-);
+if (!process.env.JWT_SECRET) {
+  // Fail loud at import time so a misconfigured environment crashes the
+  // function on first request instead of silently signing/verifying tokens
+  // with a hardcoded fallback. Production deployments must set this.
+  throw new Error(
+    'JWT_SECRET is not set. Refusing to start — set it in your environment ' +
+    '(Vercel project settings or .env.local) before running the app.'
+  );
+}
+
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 const COOKIE_NAME = 'va_session';
 
@@ -165,6 +173,24 @@ export async function middleware(request: NextRequest) {
     internalPath.includes('.')
   ) {
     return needsRewrite ? NextResponse.rewrite(rewriteUrl) : NextResponse.next();
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // 2b. Machine-to-machine API routes — bypass session check
+  //
+  // These routes authenticate themselves (cron via CRON_SECRET bearer
+  // token, webhooks via HMAC signatures). They are called by external
+  // services (Vercel Cron, GitHub Actions, TeleCMI, VAPI, Razorpay) that
+  // have no browser cookie, so the session-redirect logic below would
+  // bounce them to /login and break the integration.
+  // ─────────────────────────────────────────────────────────────────
+
+  if (
+    internalPath.startsWith('/api/cron/') ||
+    internalPath.startsWith('/api/webhooks/') ||
+    internalPath === '/api/webhooks'
+  ) {
+    return NextResponse.next();
   }
 
   // ─────────────────────────────────────────────────────────────────

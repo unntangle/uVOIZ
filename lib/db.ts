@@ -91,8 +91,7 @@ export async function createAgent(orgId: string, payload: {
     .single();
   
   if (error) {
-    console.error("Supabase createAgent Error:", error);
-    require('fs').writeFileSync('scratch/supabase_error.log', JSON.stringify(error, null, 2));
+    console.error('Supabase createAgent error:', error);
   }
   
   return data;

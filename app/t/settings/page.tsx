@@ -6,7 +6,7 @@ import PageHeader from '@/components/PageHeader';
 import { Building2, Phone, Bell, Shield, Globe, Lock, Save, Trash2, Download, Loader2, AlertCircle } from 'lucide-react';
 
 const TABS = [
-  { id: 'workspace',     label: 'Workspace',     icon: Building2 },
+  { id: 'workspace',     label: 'Profile',       icon: Building2 },
   { id: 'telephony',     label: 'Telephony',     icon: Phone },
   { id: 'compliance',    label: 'Compliance',    icon: Shield },
   { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -267,7 +267,7 @@ function SettingsContent() {
 
       <PageHeader
         title="Settings"
-        subtitle="Manage your workspace, telephony, compliance and notifications"
+        subtitle="Manage your profile, telephony, compliance and notifications"
       />
 
       <main style={{ flex: 1, padding: 24, overflowY: 'auto', background: 'var(--bg)' }}>
@@ -432,7 +432,7 @@ function WorkspaceTab({ settings, update }: TabProps) {
       </div>
 
       <div className="card">
-        <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Workspace logo</h3>
+        <h3 style={{ fontWeight: 600, marginBottom: 4 }}>Profile logo</h3>
         <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16 }}>
           Shown on invoices and email reports. Recommended 200×200px. <em style={{ color: 'var(--text3)' }}>(Upload coming soon)</em>
         </p>
@@ -458,14 +458,14 @@ function WorkspaceTab({ settings, update }: TabProps) {
       <div className="card" style={{ borderColor: 'rgba(239,68,68,0.2)' }}>
         <h3 style={{ fontWeight: 600, marginBottom: 4, color: 'var(--red)' }}>Danger zone</h3>
         <p style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-          Irreversible actions affecting your entire workspace
+          Irreversible actions affecting your entire profile
         </p>
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           padding: '14px 0', borderBottom: '1px solid var(--border)',
         }}>
           <div>
-            <div style={{ fontWeight: 500, fontSize: 14 }}>Export workspace data</div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>Export profile data</div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
               Download all calls, contacts, agents, and analytics as CSV
             </div>
@@ -477,9 +477,9 @@ function WorkspaceTab({ settings, update }: TabProps) {
           padding: '14px 0',
         }}>
           <div>
-            <div style={{ fontWeight: 500, fontSize: 14 }}>Delete workspace</div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>Delete profile</div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-              Permanently delete this workspace and all its data
+              Permanently delete this profile and all its data
             </div>
           </div>
           <button

@@ -37,7 +37,9 @@ export const ROUTE_PERMISSIONS: AppRoute[] = [
 
   // ---------- BPO admin-only ----------
   { path: '/t/billing',              allowedRoles: ['admin'] },
-  { path: '/t/team',                 allowedRoles: ['admin'] },
+  // Team route disabled for v1 — sidebar entry hidden, URL also blocked.
+  // Page file still exists at app/t/team/page.tsx; uncomment to re-enable.
+  // { path: '/t/team',                 allowedRoles: ['admin'] },
   { path: '/t/settings',             allowedRoles: ['admin'] },
 
   // ---------- BPO shared (admin + manager) ----------
@@ -111,7 +113,10 @@ export const BPO_NAV: NavItem[] = [
   { label: 'Live Calls', href: '/app/calls',      allowedRoles: ['admin', 'manager'], iconName: 'Phone' },
   { label: 'Analytics',  href: '/app/analytics',  allowedRoles: ['admin', 'manager'], iconName: 'BarChart3' },
   { label: 'Billing',    href: '/app/billing',    allowedRoles: ['admin'],            iconName: 'CreditCard' },
-  { label: 'Team',       href: '/app/team',       allowedRoles: ['admin'],            iconName: 'Users' },
+  // Team management is hidden from sidebar for v1 — single-user workspaces
+  // are the norm during early beta. Route + page still exist; re-add this
+  // entry when multi-user becomes a customer ask.
+  // { label: 'Team',       href: '/app/team',       allowedRoles: ['admin'],            iconName: 'Users' },
 ];
 
 export const BPO_NAV_GENERAL: NavItem[] = [

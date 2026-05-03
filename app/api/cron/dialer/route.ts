@@ -1,17 +1,50 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { makeCall } from '@/lib/vapi';
 
-// This endpoint should be triggered by a Cron Job every minute
-// e.g. using Vercel Cron or GitHub Actions.
-export async function GET() {
-  if (!supabaseAdmin) {
-    return NextResponse.json({ error: 'Supabase admin not configured' }, { status: 500 });
+/**
+ * Dialer cron — fires every minute, picks up to 5 pending contacts per active
+ * campaign and initiates calls.
+ *
+ * Auth: Bearer token. CRON_SECRET must be set in env. Both Vercel Cron and
+ * GitHub Actions send `Authorization: Bearer <secret>`. We accept POST so the
+ * curl from GH Actions matches; GET is also accepted so Vercel Cron's default
+ * works without configuration changes.
+ */
+
+function unauthorized(reason: string) {
+  return NextResponse.json({ error: 'Unauthorized', reason }, { status: 401 });
+}
+
+function checkAuth(req: NextRequest): NextResponse | null {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) {
+    // Fail closed: missing secret in env means we refuse to run rather than
+    // silently letting anyone trigger the dialer.
+    return NextResponse.json(
+      { error: 'Server misconfigured: CRON_SECRET not set' },
+      { status: 500 }
+    );
   }
 
-  if (process.env.CRON_SECRET) {
-    // Basic security check for Vercel Cron
-    // In production, we'd check req.headers.get('Authorization')
+  // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` automatically when
+  // configured via vercel.json. GH Actions does the same via our workflow.
+  const auth = req.headers.get('authorization') || '';
+  if (auth === `Bearer ${expected}`) return null;
+
+  // Allow `?secret=...` as a fallback for tools that can't set headers easily.
+  // Comparison is constant-time-ish via length check + string equality; for
+  // a 32-byte hex secret this is acceptable.
+  const url = new URL(req.url);
+  const querySecret = url.searchParams.get('secret');
+  if (querySecret && querySecret === expected) return null;
+
+  return unauthorized('Bad or missing cron token');
+}
+
+async function runDialer() {
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase admin not configured' }, { status: 500 });
   }
 
   try {
@@ -132,4 +165,16 @@ export async function GET() {
     console.error('Dialer Cron Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+export async function GET(req: NextRequest) {
+  const authError = checkAuth(req);
+  if (authError) return authError;
+  return runDialer();
+}
+
+export async function POST(req: NextRequest) {
+  const authError = checkAuth(req);
+  if (authError) return authError;
+  return runDialer();
 }

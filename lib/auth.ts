@@ -3,9 +3,16 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from './supabase';
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'voiceai_jwt_secret_change_in_production_2024'
-);
+if (!process.env.JWT_SECRET) {
+  // Same boot-time guard as middleware.ts. We refuse to issue or verify
+  // tokens with a hardcoded fallback secret — that's a backdoor.
+  throw new Error(
+    'JWT_SECRET is not set. Refusing to start — set it in your environment ' +
+    '(Vercel project settings or .env.local) before running the app.'
+  );
+}
+
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 const COOKIE_NAME = 'va_session';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 

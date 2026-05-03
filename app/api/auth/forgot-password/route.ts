@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase';
+import { sendPasswordResetEmail, isEmailConfigured } from '@/lib/email';
 
 const TOKEN_TTL_MINUTES = 30;
 
@@ -64,18 +65,30 @@ export async function POST(req: NextRequest) {
 
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
 
-    // === EMAIL DELIVERY ===
-    // Until an email provider (Resend, SendGrid, AWS SES, etc.) is wired up,
-    // we log the reset link to the server console so you can test the flow
-    // by copy-pasting into the browser. Replace this block with a real
-    // email send when you're ready.
-    console.log('\n──────────────────────────────────────────────────────────');
-    console.log(`🔑 PASSWORD RESET REQUESTED for ${normalizedEmail}`);
-    console.log(`   Link: ${resetUrl}`);
-    console.log(`   Expires: ${expiresAt.toISOString()}`);
-    console.log('──────────────────────────────────────────────────────────\n');
+    // Send the reset email. If Resend isn't configured, sendPasswordResetEmail
+    // logs the link to the server console as a dev fallback. In production we
+    // surface a clear error so the user isn't left wondering why nothing arrived.
+    const result = await sendPasswordResetEmail(
+      normalizedEmail,
+      resetUrl,
+      TOKEN_TTL_MINUTES
+    );
 
-    return NextResponse.json({ success: true });
+    if (!result.ok) {
+      // Don't leak provider details to the user, but log them for ops.
+      console.error('Password reset email send failed:', result.error);
+      return NextResponse.json(
+        { error: 'We generated a reset link but couldn\'t send the email. Please try again or contact support.' },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      // Surface this in dev so the developer knows to check the server console
+      // for the link instead of waiting for an email that won't arrive.
+      ...(isEmailConfigured() ? {} : { devNote: 'Email not configured — reset link logged to server console.' }),
+    });
   } catch (err) {
     console.error('Forgot password error:', err);
     return NextResponse.json({ error: 'Something went wrong. Try again.' }, { status: 500 });

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
-import { PlayCircle, PauseCircle, MoreVertical, Plus, Search, Megaphone, Loader2 } from 'lucide-react';
+import { PlayCircle, PauseCircle, MoreVertical, Plus, Search, Megaphone, Loader2, Upload, FileText, CheckCircle2, ArrowRight } from 'lucide-react';
 import { Campaign, Agent } from '@/types';
 
 const STATUS_BADGE: Record<string, string> = {
@@ -22,6 +22,12 @@ export default function Campaigns() {
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'draft'>('all');
   const [query, setQuery] = useState('');
   const [form, setForm] = useState({ name: '', language: 'en', agentId: '', script: '', roomType: 'Sales' });
+
+  // Wizard state for the create-campaign flow
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [pendingContacts, setPendingContacts] = useState<{ name: string; phone: string }[]>([]);
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [contacts, setContacts] = useState<any[]>([]);
@@ -141,19 +147,84 @@ export default function Campaigns() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.campaign) {
-          setCampaigns(prev => [data.campaign, ...prev]);
+      if (!res.ok) {
+        console.error('Create campaign failed');
+        return;
+      }
+      const data = await res.json();
+      if (!data.campaign) return;
+
+      // If the user uploaded contacts in step 2, push them to the new campaign now
+      if (pendingContacts.length > 0) {
+        try {
+          await fetch(`/api/campaigns/${data.campaign.id}/contacts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contacts: pendingContacts })
+          });
+          // Reflect the count locally so the card shows the right number immediately
+          data.campaign.totalContacts = (data.campaign.totalContacts || 0) + pendingContacts.length;
+        } catch (err) {
+          console.error('Contact upload after campaign create failed:', err);
         }
       }
+
+      setCampaigns(prev => [data.campaign, ...prev]);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
       setShowNew(false);
-      setForm({ name: '', language: 'en', agentId: 'a1', script: '', roomType: 'Sales' });
+      setWizardStep(1);
+      setPendingContacts([]);
+      setPendingFileName(null);
+      setParseError(null);
+      setForm({ name: '', language: 'en', agentId: agents[0]?.id || '', script: '', roomType: 'Sales' });
     }
+  };
+
+  // Wizard CSV parse — same logic as the detail-view upload, but stages
+  // contacts in memory until the campaign actually exists.
+  const handleWizardCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(null);
+    setPendingFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) {
+          setParseError('The file is empty.');
+          setPendingContacts([]);
+          return;
+        }
+        const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
+        const parsed: { name: string; phone: string }[] = [];
+        const skipped: number[] = [];
+        for (let i = startIndex; i < lines.length; i++) {
+          const [name, phone] = lines[i].split(',').map(s => s?.trim());
+          if (name && phone) parsed.push({ name, phone });
+          else skipped.push(i + 1);
+        }
+        if (parsed.length === 0) {
+          setParseError('No valid rows found. Expected format: Name,Phone (one per line).');
+          setPendingContacts([]);
+          return;
+        }
+        setPendingContacts(parsed);
+        if (skipped.length > 0) {
+          setParseError(`Imported ${parsed.length} contacts. Skipped ${skipped.length} malformed row${skipped.length === 1 ? '' : 's'}.`);
+        }
+      } catch (err: any) {
+        setParseError('Could not parse the file. Make sure it is a CSV with Name,Phone columns.');
+        setPendingContacts([]);
+      }
+    };
+    reader.readAsText(file);
+    if (e.target) e.target.value = '';
   };
 
   return (
@@ -216,7 +287,7 @@ export default function Campaigns() {
                 onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
               >
-                ← Back to Campaigns
+                ← Back
               </button>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
@@ -317,80 +388,274 @@ export default function Campaigns() {
 
             </div>
           ) : showNew ? (
-            <div className="fade-in" style={{ maxWidth: 640, margin: '0', width: '100%' }}>
-              <button 
-                onClick={() => setShowNew(false)}
-                style={{ 
-                  background: 'none', border: 'none', padding: 0, 
-                  color: 'var(--text3)', cursor: 'pointer', fontSize: 13, 
+            <div className="fade-in" style={{ maxWidth: 720, margin: '0', width: '100%' }}>
+              <button
+                onClick={() => { setShowNew(false); setWizardStep(1); setPendingContacts([]); setPendingFileName(null); setParseError(null); }}
+                style={{
+                  background: 'none', border: 'none', padding: 0,
+                  color: 'var(--text3)', cursor: 'pointer', fontSize: 13,
                   fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6,
                   marginBottom: 20, transition: 'color 0.2s'
                 }}
                 onMouseEnter={e => e.currentTarget.style.color = 'var(--accent)'}
                 onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
               >
-                ← Back to Campaigns
+                ← Back
               </button>
-              
-              <div className="card" style={{ padding: 32 }}>
-                <h2 style={{ fontWeight: 700, fontSize: 22, marginBottom: 8 }}>Create New Campaign</h2>
-                <p style={{ color: 'var(--text3)', marginBottom: 28, fontSize: 14 }}>Configure your outbound calling campaign and script</p>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  {[
-                    { label: 'Campaign Name', key: 'name', type: 'text', placeholder: 'e.g. Insurance Renewal March' },
-                    { label: 'Category', key: 'roomType', type: 'text', placeholder: 'e.g. Insurance, Banking, Survey' },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>{f.label}</label>
-                      <input className="input" type={f.type} placeholder={f.placeholder} value={(form as any)[f.key]} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))} />
+
+              {/* Step indicator */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginBottom: 28 }}>
+                {[
+                  { n: 1, label: 'Details' },
+                  { n: 2, label: 'Contacts' },
+                  { n: 3, label: 'Review' },
+                ].map((s, i, arr) => {
+                  const isActive = wizardStep === s.n;
+                  const isDone = wizardStep > s.n;
+                  return (
+                    <div key={s.n} style={{ display: 'flex', alignItems: 'center', flex: i === arr.length - 1 ? '0 0 auto' : '1 1 auto' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: '50%',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 13, fontWeight: 700,
+                          background: isActive ? 'var(--accent)' : isDone ? 'var(--green)' : 'var(--bg3)',
+                          color: (isActive || isDone) ? 'white' : 'var(--text3)',
+                          transition: 'all 0.2s',
+                        }}>
+                          {isDone ? <CheckCircle2 size={16} /> : s.n}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: isActive ? 'var(--text)' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {s.label}
+                        </div>
+                      </div>
+                      {i < arr.length - 1 && (
+                        <div style={{ flex: 1, height: 2, background: isDone ? 'var(--green)' : 'var(--border)', margin: '0 12px', marginBottom: 22, transition: 'background 0.2s' }} />
+                      )}
                     </div>
-                  ))}
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <div>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Language</label>
-                      <select className="select" style={{ width: '100%' }} value={form.language} onChange={e => setForm(p => ({ ...p, language: e.target.value }))}>
-                        {Object.entries(LANG).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </select>
+                  );
+                })}
+              </div>
+
+              {/* Step 1: Details */}
+              {wizardStep === 1 && (
+                <div className="card" style={{ padding: 32 }}>
+                  <h2 style={{ fontWeight: 700, fontSize: 22, marginBottom: 8 }}>Campaign details</h2>
+                  <p style={{ color: 'var(--text3)', marginBottom: 28, fontSize: 14 }}>Name your campaign and pick the AI agent that will run it.</p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    {[
+                      { label: 'Campaign Name', key: 'name', type: 'text', placeholder: 'e.g. Insurance Renewal March' },
+                      { label: 'Category', key: 'roomType', type: 'text', placeholder: 'e.g. Insurance, Banking, Survey' },
+                    ].map(f => (
+                      <div key={f.key}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>{f.label}</label>
+                        <input className="input" type={f.type} placeholder={f.placeholder} value={(form as any)[f.key]} onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))} />
+                      </div>
+                    ))}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Language</label>
+                        <select className="select" style={{ width: '100%' }} value={form.language} onChange={e => setForm(p => ({ ...p, language: e.target.value }))}>
+                          {Object.entries(LANG).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>AI Agent</label>
+                        <select
+                          className="select"
+                          style={{ width: '100%' }}
+                          value={form.agentId}
+                          onChange={e => setForm(p => ({ ...p, agentId: e.target.value }))}
+                          disabled={agents.length === 0}
+                        >
+                          {agents.length === 0 ? (
+                            <option value="">No agents available</option>
+                          ) : (
+                            agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
+                          )}
+                        </select>
+                      </div>
                     </div>
+
                     <div>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>AI Agent</label>
-                      <select 
-                        className="select" 
-                        style={{ width: '100%' }} 
-                        value={form.agentId} 
-                        onChange={e => setForm(p => ({ ...p, agentId: e.target.value }))}
-                        disabled={agents.length === 0}
+                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Call Script</label>
+                      <textarea className="input" rows={6} placeholder="Hello, I am calling from..." style={{ resize: 'none' }} value={form.script} onChange={e => setForm(p => ({ ...p, script: e.target.value }))} />
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>This is what the AI agent will say when the contact answers.</div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+                      <button
+                        className="btn btn-primary"
+                        style={{ flex: 1, justifyContent: 'center', height: 44 }}
+                        onClick={() => setWizardStep(2)}
+                        disabled={!form.name || !form.agentId}
                       >
-                        {agents.length === 0 ? (
-                          <option value="">No agents available</option>
-                        ) : (
-                          agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
-                        )}
-                      </select>
+                        {agents.length === 0 ? 'Create an Agent first' : <>Continue <ArrowRight size={14} /></>}
+                      </button>
                     </div>
-                  </div>
-                  
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Call Script</label>
-                    <textarea className="input" rows={6} placeholder="Hello, I am calling from..." style={{ resize: 'none' }} value={form.script} onChange={e => setForm(p => ({ ...p, script: e.target.value }))} />
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>This is what the AI agent will say when the contact answers.</div>
-                  </div>
-                  
-                  <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-                    <button 
-                      className="btn btn-primary" 
-                      style={{ flex: 1, justifyContent: 'center', height: 44 }} 
-                      onClick={handleCreateCampaign}
-                      disabled={!form.agentId || loading}
-                    >
-                      {loading ? 'Creating...' : agents.length === 0 ? 'Create an Agent first' : 'Create Campaign'}
-                    </button>
-                    <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', height: 44 }} onClick={() => setShowNew(false)}>Save Draft</button>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Step 2: Contacts */}
+              {wizardStep === 2 && (
+                <div className="card" style={{ padding: 32 }}>
+                  <h2 style={{ fontWeight: 700, fontSize: 22, marginBottom: 8 }}>Upload contacts</h2>
+                  <p style={{ color: 'var(--text3)', marginBottom: 24, fontSize: 14 }}>
+                    Upload a CSV with columns <code style={{ background: 'var(--bg3)', padding: '2px 6px', borderRadius: 4, fontSize: 12 }}>Name, Phone</code>. You can skip this and add contacts later.
+                  </p>
+
+                  {pendingContacts.length === 0 ? (
+                    <label htmlFor="wizardCsv" style={{
+                      display: 'block',
+                      border: '2px dashed var(--border)',
+                      borderRadius: 12,
+                      padding: '40px 20px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s, background 0.15s',
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-soft)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <input id="wizardCsv" type="file" accept=".csv" style={{ display: 'none' }} onChange={handleWizardCsv} />
+                      <Upload size={28} style={{ color: 'var(--text3)', marginBottom: 8 }} />
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+                        Click to upload a CSV
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+                        Or drop a file here. Format: <code>Name,Phone</code> per row.
+                      </div>
+                    </label>
+                  ) : (
+                    <div style={{
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      padding: 20,
+                      background: 'var(--bg2)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--accent-soft)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <FileText size={18} />
+                        </div>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {pendingFileName || 'contacts.csv'}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+                            {pendingContacts.length.toLocaleString()} contact{pendingContacts.length === 1 ? '' : 's'} ready to import
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => { setPendingContacts([]); setPendingFileName(null); setParseError(null); }}
+                          className="btn btn-ghost btn-sm"
+                        >
+                          Replace
+                        </button>
+                      </div>
+
+                      {/* Preview first 5 rows */}
+                      <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ background: 'var(--bg3)', color: 'var(--text3)' }}>
+                              <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500 }}>Name</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500 }}>Phone</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pendingContacts.slice(0, 5).map((c, i) => (
+                              <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                                <td style={{ padding: '8px 12px', color: 'var(--text)' }}>{c.name}</td>
+                                <td style={{ padding: '8px 12px', color: 'var(--text2)', fontFamily: 'monospace' }}>{c.phone}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {pendingContacts.length > 5 && (
+                          <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--text3)', background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+                            … and {(pendingContacts.length - 5).toLocaleString()} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {parseError && (
+                    <div style={{
+                      marginTop: 12,
+                      padding: '10px 14px',
+                      background: 'var(--amber-soft)',
+                      border: '1px solid #fde68a',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      color: 'var(--amber)',
+                    }}>
+                      {parseError}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+                    <button className="btn btn-ghost" style={{ height: 44 }} onClick={() => setWizardStep(1)}>
+                      ← Back
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      style={{ flex: 1, justifyContent: 'center', height: 44 }}
+                      onClick={() => setWizardStep(3)}
+                    >
+                      {pendingContacts.length === 0 ? 'Skip for now' : <>Continue <ArrowRight size={14} /></>}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Review */}
+              {wizardStep === 3 && (
+                <div className="card" style={{ padding: 32 }}>
+                  <h2 style={{ fontWeight: 700, fontSize: 22, marginBottom: 8 }}>Review & launch</h2>
+                  <p style={{ color: 'var(--text3)', marginBottom: 24, fontSize: 14 }}>
+                    Confirm the details below. Your campaign will be created in <strong>draft</strong> status — you can start it from the campaign page.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                    {[
+                      { label: 'Campaign name', value: form.name || '—' },
+                      { label: 'Category', value: form.roomType || '—' },
+                      { label: 'Language', value: LANG[form.language] || form.language },
+                      { label: 'AI Agent', value: agents.find(a => a.id === form.agentId)?.name || '—' },
+                      { label: 'Contacts to import', value: pendingContacts.length > 0 ? `${pendingContacts.length.toLocaleString()} from ${pendingFileName || 'CSV'}` : 'None (add later)' },
+                      { label: 'Script preview', value: form.script ? (form.script.length > 80 ? form.script.slice(0, 80) + '…' : form.script) : '—' },
+                    ].map((row, i, arr) => (
+                      <div key={row.label} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                        padding: '14px 18px',
+                        borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none',
+                        background: i % 2 === 0 ? 'transparent' : 'var(--bg2)',
+                      }}>
+                        <div style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 500 }}>{row.label}</div>
+                        <div style={{ fontSize: 13, color: 'var(--text)', textAlign: 'right', maxWidth: '60%', wordBreak: 'break-word' }}>{row.value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+                    <button className="btn btn-ghost" style={{ height: 44 }} onClick={() => setWizardStep(2)} disabled={loading}>
+                      ← Back
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      style={{ flex: 1, justifyContent: 'center', height: 44 }}
+                      onClick={handleCreateCampaign}
+                      disabled={loading || !form.name || !form.agentId}
+                    >
+                      {loading ? <><Loader2 size={14} className="spin" /> Creating…</> : 'Create campaign'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             loading ? (

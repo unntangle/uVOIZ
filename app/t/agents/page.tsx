@@ -16,7 +16,7 @@ export default function Agents() {
   const [showNew, setShowNew] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'training'>('all');
-  const [form, setForm] = useState({ name: '', voice: VOICES[0], language: LANGUAGES[0], personality: PERSONALITIES[0], script: '' });
+  const [form, setForm] = useState({ name: '', voice: VOICES[0], language: LANGUAGES[0], personality: PERSONALITIES[0] });
 
   useEffect(() => {
     async function fetchAgents() {
@@ -39,10 +39,13 @@ export default function Agents() {
     if (!form.name) return;
     try {
       setLoading(true);
+      // Script is intentionally not part of agent creation — lives on the
+      // campaign instead. We pass an empty string so the API contract
+      // (which still accepts `script`) doesn't break.
       const res = await fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        body: JSON.stringify({ ...form, script: '' })
       });
       if (res.ok) {
         const data = await res.json();
@@ -59,7 +62,7 @@ export default function Agents() {
     } finally {
       setLoading(false);
       setShowNew(false);
-      setForm({ name: '', voice: VOICES[0], language: LANGUAGES[0], personality: PERSONALITIES[0], script: '' });
+      setForm({ name: '', voice: VOICES[0], language: LANGUAGES[0], personality: PERSONALITIES[0] });
     }
   };
 
@@ -150,13 +153,19 @@ export default function Agents() {
                     <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Personality</label>
                     <select className="select" style={{ width: '100%' }} onChange={e => setForm(p => ({ ...p, personality: e.target.value }))}>{PERSONALITIES.map(p => <option key={p}>{p}</option>)}</select>
                   </div>
-                  
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 8 }}>Default Call Script</label>
-                    <textarea className="input" rows={6} placeholder="Hello, I am calling from..." style={{ resize: 'none' }} onChange={e => setForm(p => ({ ...p, script: e.target.value }))} />
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>This script will be used as a fallback for new campaigns.</div>
+
+                  <div style={{
+                    padding: '12px 14px',
+                    background: 'var(--accent-soft)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: 'var(--text2)',
+                    lineHeight: 1.55,
+                  }}>
+                    💡 Call scripts are set per campaign, not per agent. The same agent can run multiple campaigns with different scripts.
                   </div>
-                  
+
                   <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
                     <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center', height: 44 }} onClick={handleCreateAgent} disabled={loading}>{loading ? 'Creating...' : 'Create Agent'}</button>
                     <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', height: 44 }} onClick={() => setShowNew(false)}>Cancel</button>

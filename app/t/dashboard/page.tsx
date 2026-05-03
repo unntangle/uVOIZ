@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { Phone, TrendingUp, Clock, Activity, PauseCircle, Plus, Search, Calendar, ChevronRight, User, Bot, CreditCard } from 'lucide-react';
+import { Phone, TrendingUp, Clock, Activity, PauseCircle, Plus, Search, Calendar, ChevronRight, User, Bot, CreditCard, BarChart3 } from 'lucide-react';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
 import StatCard from '@/components/StatCard';
 import LiveCallCard from '@/components/LiveCallCard';
-import { mockChartData, mockWeeklyData } from '@/lib/mock-data';
+import EmptyChart from '@/components/EmptyChart';
 import { formatDuration, formatNumber, formatPercent } from '@/lib/utils';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Call, Campaign, DashboardStats } from '@/types';
@@ -56,6 +56,50 @@ export default function Dashboard() {
   const liveCalls = calls.filter(c => c.status === 'in-progress' || c.status === 'ringing');
   const activeCampaigns = campaigns.filter(c => c.status === 'active').slice(0, 5);
   const recentCalls = calls.slice(0, 5);
+
+  // Build hourly series from real call data. Empty array (length 0) means
+  // no calls today — we render an empty state instead of a flat-line chart.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const hourlyData: { hour: string; calls: number; conversions: number }[] = Array.from({ length: 24 }, (_, h) => ({
+    hour: `${h.toString().padStart(2, '0')}:00`,
+    calls: 0,
+    conversions: 0,
+  }));
+  let hasHourlyData = false;
+  for (const c of calls) {
+    if (!c.startedAt) continue;
+    const d = new Date(c.startedAt);
+    if (d < today) continue;
+    const h = d.getHours();
+    hourlyData[h].calls += 1;
+    if (c.converted) hourlyData[h].conversions += 1;
+    hasHourlyData = true;
+  }
+
+  // Build weekly aggregates (last 7 days) from real call data
+  const weeklyData: { day: string; calls: number; converted: number }[] = [];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    weeklyData.push({ day: dayNames[d.getDay()], calls: 0, converted: 0 });
+  }
+  let hasWeeklyData = false;
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - 6);
+  weekStart.setHours(0, 0, 0, 0);
+  for (const c of calls) {
+    if (!c.startedAt) continue;
+    const d = new Date(c.startedAt);
+    if (d < weekStart) continue;
+    const dayDiff = Math.floor((d.getTime() - weekStart.getTime()) / (1000 * 60 * 60 * 24));
+    if (dayDiff < 0 || dayDiff > 6) continue;
+    weeklyData[dayDiff].calls += 1;
+    if (c.converted) weeklyData[dayDiff].converted += 1;
+    hasWeeklyData = true;
+  }
 
   return (
     <>
@@ -122,35 +166,53 @@ export default function Dashboard() {
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div><div style={{ fontWeight: 600, marginBottom: 2 }}>Hourly Call Volume</div><div style={{ fontSize: 12, color: 'var(--text3)' }}>Calls & conversions today</div></div>
-                <span className="badge badge-green">Live</span>
+                {hasHourlyData && <span className="badge badge-green">Live</span>}
               </div>
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={mockChartData}>
-                  <defs>
-                    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0AB4F5" stopOpacity={0.3}/><stop offset="95%" stopColor="#0AB4F5" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/><stop offset="95%" stopColor="#22c55e" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="hour" tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} interval={3} />
-                  <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} />
-                  <Tooltip content={<Tip />} />
-                  <Area type="monotone" dataKey="calls" stroke="#0AB4F5" fill="url(#g1)" strokeWidth={2} dot={false} name="Calls" />
-                  <Area type="monotone" dataKey="conversions" stroke="#22c55e" fill="url(#g2)" strokeWidth={2} dot={false} name="Conversions" />
-                </AreaChart>
-              </ResponsiveContainer>
+              {hasHourlyData ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <AreaChart data={hourlyData}>
+                    <defs>
+                      <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0AB4F5" stopOpacity={0.3}/><stop offset="95%" stopColor="#0AB4F5" stopOpacity={0}/></linearGradient>
+                      <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/><stop offset="95%" stopColor="#22c55e" stopOpacity={0}/></linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="hour" tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} interval={3} />
+                    <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <Tooltip content={<Tip />} />
+                    <Area type="monotone" dataKey="calls" stroke="#0AB4F5" fill="url(#g1)" strokeWidth={2} dot={false} name="Calls" />
+                    <Area type="monotone" dataKey="conversions" stroke="#22c55e" fill="url(#g2)" strokeWidth={2} dot={false} name="Conversions" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyChart
+                  icon={<Phone size={28} />}
+                  title="No calls today"
+                  message="Hourly call volume will show up here once your campaigns start dialing."
+                  height={180}
+                />
+              )}
             </div>
             <div className="card">
               <div style={{ marginBottom: 20 }}><div style={{ fontWeight: 600, marginBottom: 2 }}>Weekly Performance</div><div style={{ fontSize: 12, color: 'var(--text3)' }}>7-day calls and conversions</div></div>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={mockWeeklyData} barSize={18} barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} />
-                  <Tooltip content={<Tip />} />
-                  <Bar dataKey="calls" fill="#0AB4F5" opacity={0.8} radius={[4,4,0,0]} name="Calls" />
-                  <Bar dataKey="converted" fill="#22c55e" opacity={0.8} radius={[4,4,0,0]} name="Converted" />
-                </BarChart>
-              </ResponsiveContainer>
+              {hasWeeklyData ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={weeklyData} barSize={18} barGap={4}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fill: 'var(--text3)', fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <Tooltip content={<Tip />} />
+                    <Bar dataKey="calls" fill="#0AB4F5" opacity={0.8} radius={[4,4,0,0]} name="Calls" />
+                    <Bar dataKey="converted" fill="#22c55e" opacity={0.8} radius={[4,4,0,0]} name="Converted" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyChart
+                  icon={<BarChart3 size={28} />}
+                  title="No data yet"
+                  message="Weekly performance will populate once you have completed calls."
+                  height={180}
+                />
+              )}
             </div>
           </div>
 

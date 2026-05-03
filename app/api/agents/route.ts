@@ -56,13 +56,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!agent) {
-      require('fs').writeFileSync('scratch/error.log', 'Agent is null. Supabase insert failed.');
+      // Surface this prominently in logs — something is misconfigured if we
+      // got here without an agent (Supabase insert returned null).
+      console.error('Agent creation returned null — Supabase insert likely failed.');
     }
 
     return NextResponse.json({ agent });
   } catch (error: any) {
-    console.error('POST agent error:', error);
-    require('fs').writeFileSync('scratch/error.log', JSON.stringify({ message: error.message, stack: error.stack }, null, 2));
+    console.error('POST agent error:', error?.message, error?.stack);
     return NextResponse.json({ error: 'Failed to create agent', details: error.message }, { status: 500 });
   }
 }
