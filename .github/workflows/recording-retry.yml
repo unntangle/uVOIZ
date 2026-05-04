@@ -1,0 +1,37 @@
+# Recording-retry cron
+#
+# Sweeps calls where the VAPI webhook fired but the inline R2 upload
+# didn't land. Runs every 10 minutes — there's no human waiting on a
+# recording upload, so a 10-minute SLA is fine.
+#
+# Why GitHub Actions instead of Vercel Cron:
+#   - Free, no Vercel Pro plan dependency
+#   - Survives if we ever leave Vercel
+#   - Visible in the Actions tab — one place to check whether crons
+#     are firing without logging into the host
+#
+# Note: GitHub Actions cron has up to ~5-min skew under load. Combined
+# with our 10-min interval, real-world latency is "recording lands in
+# R2 within ~15 min of the call ending, even on the worst day." That's
+# the SLA we sell to customers.
+#
+# Tightening later: if you move to Vercel Cron via vercel.json, the
+# skew drops to seconds. Worth it once a customer notices the gap.
+
+name: Recording Retry Cron
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # every 10 minutes
+  workflow_dispatch:        # manual fire from Actions tab for testing
+
+jobs:
+  trigger-recording-retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit recording-retry endpoint
+        run: |
+          curl -X POST https://uvoiz.unntangle.com/api/cron/recording-retry \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 90 \
+            --fail-with-body

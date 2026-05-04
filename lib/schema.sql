@@ -85,6 +85,18 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 
 -- Calls
+--
+-- Recording lifecycle:
+--   1. Voice provider (VAPI / TeleCMI) finishes the call and the
+--      webhook handler stores the upstream URL in `recording_url`.
+--   2. The recording-fetch Inngest job picks up rows where
+--      recording_url IS NOT NULL AND recording_key IS NULL, downloads
+--      the audio, uploads to R2, and writes the R2 key here.
+--   3. The calls detail route generates a fresh signed URL from
+--      `recording_key` per request (5-min TTL) — the upstream URL is
+--      no longer used for playback.
+--   4. The retention cron deletes the R2 object after the org's
+--      retention window elapses, then nulls out recording_key.
 CREATE TABLE IF NOT EXISTS calls (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
@@ -95,6 +107,9 @@ CREATE TABLE IF NOT EXISTS calls (
   status TEXT DEFAULT 'queued' CHECK (status IN ('queued','ringing','in-progress','completed','failed','no-answer','busy')),
   duration INTEGER DEFAULT 0,
   recording_url TEXT,
+  recording_key TEXT,
+  recording_bytes BIGINT,
+  recording_fetched_at TIMESTAMPTZ,
   transcript TEXT,
   sentiment TEXT CHECK (sentiment IN ('positive', 'neutral', 'negative')),
   converted BOOLEAN DEFAULT FALSE,
@@ -102,6 +117,17 @@ CREATE TABLE IF NOT EXISTS calls (
   ended_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Helper indexes for the recording lifecycle. Both are partial so they
+-- only cost storage proportional to the active workload.
+CREATE INDEX IF NOT EXISTS calls_pending_recording_ingest
+  ON calls (created_at)
+  WHERE recording_url IS NOT NULL
+    AND recording_key IS NULL;
+
+CREATE INDEX IF NOT EXISTS calls_recording_retention
+  ON calls (org_id, recording_fetched_at)
+  WHERE recording_key IS NOT NULL;
 
 -- Billing events
 -- cf_payment_id stores the Cashfree order id (was named razorpay_payment_id

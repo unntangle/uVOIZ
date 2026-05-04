@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Topbar from '@/components/Topbar';
 import PageHeader from '@/components/PageHeader';
+import RecordingPlayerModal from '@/components/RecordingPlayerModal';
 import { Download, Play, Filter } from 'lucide-react';
 import { formatDuration, timeAgo } from '@/lib/utils';
 import { Call, CallStatus } from '@/types';
@@ -16,6 +17,11 @@ export default function Calls() {
   const [filter, setFilter] = useState<'all' | CallStatus>('all');
   const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Recording player modal state. We track the full call so the modal
+  // can show contact name/phone in its header without a second fetch.
+  // null means the modal is closed.
+  const [playingCall, setPlayingCall] = useState<Call | null>(null);
 
   useEffect(() => {
     async function fetchCalls() {
@@ -36,6 +42,28 @@ export default function Calls() {
 
   const filtered = filter === 'all' ? calls : calls.filter(c => c.status === filter);
   const liveCount = calls.filter(c => c.status === 'in-progress').length;
+
+  // Direct download — fetches a download-flavoured signed URL and
+  // triggers it via an anchor click. Same pattern as the modal's
+  // download button, exposed inline for users who don't want to open
+  // the player just to grab the file.
+  const handleDirectDownload = async (callId: string) => {
+    try {
+      const res = await fetch(`/api/calls/${callId}/recording?download=1`);
+      if (!res.ok) {
+        console.warn('Download URL fetch failed:', res.status);
+        return;
+      }
+      const data = await res.json();
+      if (data.url) {
+        const a = document.createElement('a');
+        a.href = data.url;
+        a.click();
+      }
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
+  };
 
   return (
     <>
@@ -67,32 +95,63 @@ export default function Calls() {
                 <tr><th>Contact</th><th>Campaign</th><th>Agent</th><th>Status</th><th>Duration</th><th>Sentiment</th><th>Converted</th><th>Time</th><th>Actions</th></tr>
               </thead>
               <tbody>
-                {filtered.length > 0 ? filtered.map(call => (
-                  <tr key={call.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        {call.status === 'in-progress' && <div className="live-dot" />}
-                        <div>
-                          <div style={{ fontWeight: 600 }}>{call.contactName}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text3)' }}>{call.contactPhone}</div>
+                {filtered.length > 0 ? filtered.map(call => {
+                  // A call has a recording available if EITHER the legacy
+                  // recording_url is set (still being ingested) OR R2 has it.
+                  // The modal handles the pending case gracefully, so we
+                  // show the Play button as long as there's any signal of
+                  // audio existing. Calls in 'queued' or 'in-progress'
+                  // status can't have recordings yet.
+                  const hasRecording =
+                    !!call.recordingUrl &&
+                    call.status !== 'queued' &&
+                    call.status !== 'in-progress' &&
+                    call.status !== 'ringing';
+                  return (
+                    <tr key={call.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {call.status === 'in-progress' && <div className="live-dot" />}
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{call.contactName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text3)' }}>{call.contactPhone}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td style={{ fontSize: 13 }}>{call.campaignName}</td>
-                    <td><span className="badge badge-purple">{call.agentName}</span></td>
-                    <td><span className={`badge ${STATUS_BADGE[call.status]}`}>{call.status.replace('-', ' ')}</span></td>
-                    <td><span className="mono" style={{ fontSize: 13 }}>{formatDuration(call.duration)}</span></td>
-                    <td>{call.sentiment ? <span className={`badge ${SENTIMENT_BADGE[call.sentiment]}`}>{call.sentiment}</span> : <span style={{ color: 'var(--text3)', fontSize: 12 }}>-</span>}</td>
-                    <td>{call.converted ? <span style={{ color: 'var(--green)', fontWeight: 600 }}>Yes</span> : <span style={{ color: 'var(--text3)', fontSize: 12 }}>No</span>}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text3)' }}>{call.startedAt ? timeAgo(new Date(call.startedAt)) : '-'}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {call.recordingUrl && <button className="btn btn-ghost btn-sm btn-icon"><Play size={12} /></button>}
-                        {call.recordingUrl && <button className="btn btn-ghost btn-sm btn-icon"><Download size={12} /></button>}
-                      </div>
-                    </td>
-                  </tr>
-                )) : (
+                      </td>
+                      <td style={{ fontSize: 13 }}>{call.campaignName}</td>
+                      <td><span className="badge badge-purple">{call.agentName}</span></td>
+                      <td><span className={`badge ${STATUS_BADGE[call.status]}`}>{call.status.replace('-', ' ')}</span></td>
+                      <td><span className="mono" style={{ fontSize: 13 }}>{formatDuration(call.duration)}</span></td>
+                      <td>{call.sentiment ? <span className={`badge ${SENTIMENT_BADGE[call.sentiment]}`}>{call.sentiment}</span> : <span style={{ color: 'var(--text3)', fontSize: 12 }}>-</span>}</td>
+                      <td>{call.converted ? <span style={{ color: 'var(--green)', fontWeight: 600 }}>Yes</span> : <span style={{ color: 'var(--text3)', fontSize: 12 }}>No</span>}</td>
+                      <td style={{ fontSize: 12, color: 'var(--text3)' }}>{call.startedAt ? timeAgo(new Date(call.startedAt)) : '-'}</td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {hasRecording && (
+                            <button
+                              className="btn btn-ghost btn-sm btn-icon"
+                              onClick={() => setPlayingCall(call)}
+                              title="Play recording"
+                              aria-label="Play recording"
+                            >
+                              <Play size={12} />
+                            </button>
+                          )}
+                          {hasRecording && (
+                            <button
+                              className="btn btn-ghost btn-sm btn-icon"
+                              onClick={() => handleDirectDownload(call.id)}
+                              title="Download recording"
+                              aria-label="Download recording"
+                            >
+                              <Download size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
                   <tr><td colSpan={9} style={{ textAlign: 'center', padding: '32px', color: 'var(--text3)', fontSize: 14 }}>{loading ? 'Loading calls...' : 'No calls found'}</td></tr>
                 )}
               </tbody>
@@ -132,6 +191,17 @@ export default function Calls() {
           </div>
 
         </main>
+
+        {/* Recording player modal — driven by playingCall state.
+            Closing the modal nulls playingCall, which the modal's own
+            useEffect notices and pauses/clears the audio element. */}
+        <RecordingPlayerModal
+          open={!!playingCall}
+          onClose={() => setPlayingCall(null)}
+          callId={playingCall?.id ?? null}
+          contactName={playingCall?.contactName}
+          contactPhone={playingCall?.contactPhone}
+        />
     </>
   );
 }

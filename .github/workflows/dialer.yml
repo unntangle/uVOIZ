@@ -1,0 +1,32 @@
+# Dialer cron
+#
+# Fires the campaign dialer every minute. Picks up to 5 pending contacts
+# per active campaign and initiates VAPI calls. See app/api/cron/dialer/.
+#
+# GitHub Actions cron is best-effort under load (up to ~5 min skew), but
+# for the dialer that's acceptable — campaigns aren't second-sensitive,
+# and outbound rate-limiting smooths over the bursts.
+#
+# If/when you need exact 1-minute cadence, swap to Vercel Cron via
+# vercel.json:
+#   { "crons": [{ "path": "/api/cron/dialer", "schedule": "* * * * *" }] }
+# Vercel Cron auto-attaches the same Bearer token format from a project
+# env var, so the route's auth check works either way.
+
+name: Dialer Cron
+
+on:
+  schedule:
+    - cron: '* * * * *' # every minute
+  workflow_dispatch:     # manual fire from Actions tab for testing
+
+jobs:
+  trigger-dialer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit dialer endpoint
+        run: |
+          curl -X POST https://uvoiz.unntangle.com/api/cron/dialer \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 30 \
+            --fail-with-body

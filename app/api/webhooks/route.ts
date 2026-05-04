@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateCall, updateOrgMinutes, getOrg } from '@/lib/db';
 import { parseWebhookEvent, analyseSentiment, isConverted } from '@/lib/vapi';
 import { supabaseAdmin } from '@/lib/supabase';
+import { ingestRecordingFireAndForget } from '@/lib/recording-fetch';
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,6 +41,31 @@ export async function POST(req: NextRequest) {
           converted,
           ended_at: new Date().toISOString(),
         });
+
+        // ─────────────────────────────────────────────────────────
+        // Kick off recording ingest into R2.
+        //
+        // We need our calls.id (the UUID) to fire this, but updateCall
+        // above keyed on vapi_call_id. Re-fetch it. This is a single
+        // indexed read, so the webhook latency budget is fine.
+        //
+        // Fire-and-forget: we don't await. A slow R2 upload must not
+        // delay our 200 response — VAPI replays slow webhooks, which
+        // would risk double-ingestion. The cron at /api/cron/recording-retry
+        // will pick up anything that fails or times out here.
+        // ─────────────────────────────────────────────────────────
+        if (event.recordingUrl) {
+          const { data: callRow } = await supabaseAdmin
+            .from('calls')
+            .select('id')
+            .eq('vapi_call_id', event.callId)
+            .maybeSingle();
+          if (callRow?.id) {
+            ingestRecordingFireAndForget(callRow.id);
+          } else {
+            console.warn('VAPI webhook: no calls row for vapi_call_id', event.callId);
+          }
+        }
 
         // Update minute usage for the org
         if (event.metadata?.orgId) {
