@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { createVapiAssistant } from '@/lib/vapi';
+import { getVoiceProvider } from '@/lib/voice-provider';
 import { isValidPlanId, PLANS } from '@/lib/plans';
 
 /**
@@ -112,7 +112,17 @@ export async function POST(req: NextRequest) {
         .eq('id', session.id);
     }
 
-    // Create a default AI agent for the org (best effort — non-fatal if VAPI is not configured)
+    // Create a default AI agent for the org. Best-effort — if the
+    // upstream provider is not configured, we just skip and the user
+    // gets an org with no default agent (they can create one
+    // manually). Non-fatal so onboarding completes either way.
+    //
+    // Historical note: this used to call createVapiAssistant from
+    // lib/vapi.ts directly. After the provider abstraction shipped,
+    // that shim's return type degraded to {} which broke .id access
+    // on a strict Vercel build. Migrated to getVoiceProvider() to
+    // match the rest of the routes (POST /api/agents, the dialer
+    // cron, the duplicate route).
     if (process.env.VAPI_API_KEY && session.orgId) {
       try {
         const defaultScript =
@@ -122,7 +132,8 @@ export async function POST(req: NextRequest) {
             ? 'Vanakkam! Engal special offer pattri ungaludan pesugiren...'
             : 'Hello! I am calling to share an exciting offer with you today...';
 
-        const vapiAssistant = await createVapiAssistant({
+        const provider = getVoiceProvider();
+        const assistant = await provider.createAssistant({
           name: 'Default Agent',
           voice: 'Priya (Female)',
           language:
@@ -145,11 +156,15 @@ export async function POST(req: NextRequest) {
             language: primaryLanguage === 'hi' ? 'Hindi + English' : 'English',
             personality: 'Friendly & Empathetic',
             script: defaultScript,
-            vapiAssistantId: vapiAssistant.id,
+            // Field name in the request body stays vapiAssistantId for
+            // back-compat with the /api/agents handler that consumes it.
+            // Internal naming everywhere else has moved to the
+            // provider-agnostic form.
+            vapiAssistantId: assistant.id,
           }),
         });
-      } catch (vapiError) {
-        console.error('VAPI agent creation failed (non-fatal):', vapiError);
+      } catch (provisionError) {
+        console.error('Default agent provisioning failed (non-fatal):', provisionError);
       }
     }
 

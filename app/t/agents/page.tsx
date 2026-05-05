@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import Dropdown from '@/components/Dropdown';
 import MoreMenu from '@/components/MoreMenu';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import TalkToAgentDialog from '@/components/TalkToAgentDialog';
 import { Bot, Phone, TrendingUp, Clock, Plus, Search, Play, Loader2 } from 'lucide-react';
 import { formatDuration, formatPercent } from '@/lib/utils';
 import { Agent } from '@/types';
@@ -54,6 +55,12 @@ export default function Agents() {
   const [deleteError, setDeleteError]     = useState<string | null>(null); // delete failed — shown INSIDE the dialog
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null); // duplicate request in flight (UI feedback)
   const [actionError, setActionError] = useState<string | null>(null);  // last error from rename/duplicate (NOT delete)
+
+  // Talk-to-agent (browser test call) state. Held at page level
+  // rather than inside AgentCard so only one test call can be open
+  // at a time (LiveKit Build tier = 5 concurrent agent sessions and
+  // we don't want a user to accidentally open three of these).
+  const [testingAgent, setTestingAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
     async function fetchAgents() {
@@ -385,6 +392,7 @@ export default function Agents() {
                       onStartRename={() => startRename(a)}
                       onDuplicate={() => handleDuplicate(a)}
                       onAskDelete={() => askDelete(a)}
+                      onTestCall={() => setTestingAgent(a)}
                     />
                   ))}
                 </div>
@@ -412,6 +420,16 @@ export default function Agents() {
           error={deleteError}
           onConfirm={confirmDelete}
           onCancel={closeDeleteDialog}
+        />
+
+        {/* Browser-based test call. Mounted at page level so it sits
+            above the cards and the ConfirmDialog cleanly. The dialog
+            handles its own LiveKit room lifecycle — we just give it
+            an agent and a way to close. */}
+        <TalkToAgentDialog
+          open={!!testingAgent}
+          agent={testingAgent}
+          onClose={() => setTestingAgent(null)}
         />
     </>
   );
@@ -495,6 +513,7 @@ interface AgentCardProps {
   onStartRename: () => void;
   onDuplicate: () => void;
   onAskDelete: () => void;
+  onTestCall: () => void;
 }
 
 function AgentCard({
@@ -508,6 +527,7 @@ function AgentCard({
   onStartRename,
   onDuplicate,
   onAskDelete,
+  onTestCall,
 }: AgentCardProps) {
   // Numeric stats — default to 0 for a brand-new assistant with no calls yet.
   const callsHandled = a.callsHandled ?? 0;
@@ -605,7 +625,17 @@ function AgentCard({
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-        <button className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ flex: 1, justifyContent: 'center' }}
+          onClick={(e) => {
+            // The card itself has hover/click affordances; stop
+            // propagation so clicking Test Call doesn't also fire
+            // any future card-level onClick.
+            e.stopPropagation();
+            onTestCall();
+          }}
+        >
           <Play size={13} /> Test Call
         </button>
       </div>

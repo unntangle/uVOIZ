@@ -1,0 +1,22 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.uv/
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Local-only env files (the worker reads ../.env.local from the
+# project root; nothing here should ever be checked in)
+.env
+.env.local

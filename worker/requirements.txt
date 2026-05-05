@@ -1,0 +1,8 @@
+# Pinned dependency list for environments without uv / pyproject support.
+# Mirrors the [project.dependencies] section of pyproject.toml.
+# If you change this file, change pyproject.toml too — they are not
+# auto-synced.
+
+livekit-agents[openai]>=1.5.0,<2.0.0
+livekit-plugins-sarvam>=1.5.0,<2.0.0
+python-dotenv>=1.0.0

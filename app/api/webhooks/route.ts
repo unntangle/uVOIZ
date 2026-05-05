@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateCall, updateOrgMinutes, getOrg } from '@/lib/db';
-import { parseWebhookEvent, analyseSentiment, isConverted } from '@/lib/vapi';
+import { getVoiceProvider } from '@/lib/voice-provider';
+import { analyseSentiment, isConverted } from '@/lib/transcript-analysis';
 import { supabaseAdmin } from '@/lib/supabase';
 import { ingestRecordingFireAndForget } from '@/lib/recording-fetch';
 
@@ -8,15 +9,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     if (!supabaseAdmin) {
-      console.warn('VAPI webhook received but Supabase is not configured. Skipping processing.');
+      console.warn('Voice provider webhook received but Supabase is not configured. Skipping processing.');
       return NextResponse.json({ received: true });
     }
 
-    const event = parseWebhookEvent(body);
+    const provider = getVoiceProvider();
+    const event = provider.parseWebhookEvent(body);
 
     if (!event) return NextResponse.json({ received: true });
 
-    console.log(`VAPI webhook: ${event.type} — call ${event.callId}`);
+    console.log(`${provider.name} webhook: ${event.type} — call ${event.callId}`);
 
     switch (event.type) {
 
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
           if (callRow?.id) {
             ingestRecordingFireAndForget(callRow.id);
           } else {
-            console.warn('VAPI webhook: no calls row for vapi_call_id', event.callId);
+            console.warn('Voice webhook: no calls row for provider call id', event.callId);
           }
         }
 
@@ -139,7 +141,7 @@ export async function POST(req: NextRequest) {
         break;
 
       default:
-        console.log('Unhandled VAPI event type:', event.type);
+        console.log('Unhandled voice provider event type:', event.type);
     }
 
     return NextResponse.json({ received: true });

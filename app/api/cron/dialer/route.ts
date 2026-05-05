@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { makeCall } from '@/lib/vapi';
+import { getVoiceProvider } from '@/lib/voice-provider';
+import { evaluateAndLog, type ComplianceInput } from '@/lib/compliance';
 
 /**
  * Dialer cron — fires every minute, picks up to 5 pending contacts per active
@@ -10,6 +11,16 @@ import { makeCall } from '@/lib/vapi';
  * GitHub Actions send `Authorization: Bearer <secret>`. We accept POST so the
  * curl from GH Actions matches; GET is also accepted so Vercel Cron's default
  * works without configuration changes.
+ *
+ * Compliance gating:
+ *   Before each call, the dialer runs the contact through
+ *   lib/compliance.ts. If the org has compliance_strict ON, any block
+ *   finding (outside calling window, DND, missing DLT template, missing
+ *   consent source) skips the call and logs a compliance_events row.
+ *   Strict OFF downgrades blocks to warnings — call still proceeds, row
+ *   still logged. The contact is NOT marked failed in either case; it
+ *   stays 'pending' so a later run (within the legal window, after DND
+ *   scrub, etc.) can pick it up.
  */
 
 function unauthorized(reason: string) {
@@ -48,10 +59,14 @@ async function runDialer() {
   }
 
   try {
-    // 1. Find active campaigns
+    // 1. Find active campaigns. We pull the compliance-relevant fields
+    //    (window + consent_source) here so we don't have to refetch
+    //    them per contact below.
     const { data: activeCampaigns, error: campaignErr } = await supabaseAdmin
       .from('campaigns')
-      .select('id, org_id, agent_id, name')
+      .select(
+        'id, org_id, agent_id, name, consent_source, calling_window_start, calling_window_end',
+      )
       .eq('status', 'active');
 
     if (campaignErr) throw campaignErr;
@@ -59,14 +74,20 @@ async function runDialer() {
       return NextResponse.json({ message: 'No active campaigns' });
     }
 
-    const callsInitiated = [];
+    const callsInitiated: Array<{ contactId: string; callId: string }> = [];
+    const callsSkipped: Array<{
+      contactId: string;
+      reasons: string[];
+    }> = [];
 
     // 2. Loop through campaigns
     for (const campaign of activeCampaigns) {
-      // 2a. Get the agent for this campaign to retrieve vapi_assistant_id
+      // 2a. Get the agent for this campaign — we need vapi_assistant_id
+      //     to actually place the call AND dlt_template_id /
+      //     script_locked_at for the compliance check.
       const { data: agent } = await supabaseAdmin
         .from('agents')
-        .select('id, vapi_assistant_id')
+        .select('id, vapi_assistant_id, dlt_template_id, script_locked_at')
         .eq('id', campaign.agent_id)
         .single();
 
@@ -75,10 +96,12 @@ async function runDialer() {
         continue;
       }
 
-      // 2b. Check org minutes
+      // 2b. Check org minutes AND pull compliance flags in the same query.
       const { data: org } = await supabaseAdmin
         .from('organizations')
-        .select('minutes_used, minutes_limit')
+        .select(
+          'id, minutes_used, minutes_limit, compliance_strict, dlt_entity_id, dlt_header',
+        )
         .eq('id', campaign.org_id)
         .single();
 
@@ -92,26 +115,72 @@ async function runDialer() {
         continue;
       }
 
-      // 3. Find pending contacts for this campaign
-      // Only picking 5 at a time to prevent rate limits / massive concurrency
+      // 3. Find pending contacts for this campaign. Use the
+      //    contacts_callable index (added in 005_compliance.sql) which
+      //    pre-filters to dnd_status IN ('unchecked', 'clean'). We
+      //    still re-check status in lib/compliance.ts so the DB is not
+      //    the only line of defense, but the index makes the common
+      //    case cheap.
       const { data: contacts } = await supabaseAdmin
         .from('contacts')
-        .select('id, name, phone')
+        .select('id, name, phone, dnd_status, consent_source')
         .eq('campaign_id', campaign.id)
         .eq('status', 'pending')
+        .in('dnd_status', ['unchecked', 'clean'])
         .limit(5);
 
       if (!contacts || contacts.length === 0) {
-        // Mark campaign as completed
-        await supabaseAdmin
-          .from('campaigns')
-          .update({ status: 'completed' })
-          .eq('id', campaign.id);
+        // No callable contacts. Don't auto-complete the campaign here —
+        // there might be DND-flagged contacts still in the table that a
+        // future scrub run could re-classify. A separate completion job
+        // can decide when a campaign is truly done.
         continue;
       }
 
-      // 4. Initiate calls
+      // 4. For each contact, run compliance gate, then place the call
+      //    if allowed.
       for (const contact of contacts) {
+        const complianceInput: ComplianceInput = {
+          org: {
+            id: org.id,
+            compliance_strict: !!org.compliance_strict,
+            dlt_entity_id: org.dlt_entity_id,
+            dlt_header: org.dlt_header,
+          },
+          campaign: {
+            id: campaign.id,
+            consent_source: campaign.consent_source,
+            calling_window_start: campaign.calling_window_start,
+            calling_window_end: campaign.calling_window_end,
+          },
+          agent: {
+            id: agent.id,
+            dlt_template_id: agent.dlt_template_id,
+            script_locked_at: agent.script_locked_at,
+          },
+          contact: {
+            id: contact.id,
+            dnd_status: contact.dnd_status as ComplianceInput['contact']['dnd_status'],
+            consent_source: contact.consent_source,
+          },
+        };
+
+        const decision = await evaluateAndLog(complianceInput);
+
+        if (decision.shouldBlockCall) {
+          // Hard block — strict mode is on and at least one rule failed.
+          // Leave the contact 'pending' so a later run can succeed
+          // (e.g. when the calling window opens). The audit row was
+          // written by evaluateAndLog.
+          callsSkipped.push({
+            contactId: contact.id,
+            reasons: decision.findings
+              .filter((f) => f.severity === 'block')
+              .map((f) => f.reason),
+          });
+          continue;
+        }
+
         try {
           // Mark as calling to prevent duplicate triggers
           await supabaseAdmin
@@ -119,10 +188,11 @@ async function runDialer() {
             .update({ status: 'calling' })
             .eq('id', contact.id);
 
-          const callRes = await makeCall({
+          const provider = getVoiceProvider();
+          const callRes = await provider.placeCall({
             phone: contact.phone,
             customerName: contact.name,
-            vapiAssistantId: agent.vapi_assistant_id,
+            providerAssistantId: agent.vapi_assistant_id,
             campaignId: campaign.id,
             metadata: {
               contactId: contact.id,
@@ -146,7 +216,8 @@ async function runDialer() {
           callsInitiated.push({ contactId: contact.id, callId: callRes.id });
         } catch (e: any) {
           console.error(`Failed to call ${contact.phone}:`, e);
-          // Revert to pending or failed
+          // Revert to failed so we don't loop on a permanently-broken
+          // contact; the operator can re-queue manually if needed.
           await supabaseAdmin
             .from('contacts')
             .update({ status: 'failed' })
@@ -155,10 +226,12 @@ async function runDialer() {
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       initiated: callsInitiated.length,
-      details: callsInitiated 
+      skipped: callsSkipped.length,
+      details: callsInitiated,
+      skippedDetails: callsSkipped,
     });
 
   } catch (error: any) {

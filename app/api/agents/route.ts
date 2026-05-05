@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { getOrg, getAgents, createAgent } from '@/lib/db';
-import { createVapiAssistant } from '@/lib/vapi';
+import { getVoiceProvider } from '@/lib/voice-provider';
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,20 +29,23 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    // Create VAPI assistant
+    // Materialise an upstream assistant via the configured voice
+    // provider. Today this is VAPI; once VOICE_PROVIDER=telecmi is
+    // wired up the body of this block does not change.
     let vapiAssistantId: string | undefined;
     if (process.env.VAPI_API_KEY) {
       try {
-        const vapiAssistant = await createVapiAssistant({
+        const provider = getVoiceProvider();
+        const assistant = await provider.createAssistant({
           name: body.name,
           voice: body.voice,
           language: body.language,
           personality: body.personality,
           script: body.script,
         });
-        vapiAssistantId = vapiAssistant.id;
+        vapiAssistantId = assistant.id;
       } catch (e) {
-        console.error('VAPI assistant creation failed:', e);
+        console.error('Voice provider assistant creation failed:', e);
       }
     }
 

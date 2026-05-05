@@ -7,10 +7,9 @@
 //
 // Consumed by:
 //   - app/t/billing/page.tsx          (UI — render cards)
-//   - app/api/billing/order/route.ts  (validate plan, create Razorpay order)
+//   - app/api/billing/order/route.ts  (validate plan, create Cashfree order)
 //   - app/api/billing/verify/route.ts (credit minutes on payment success)
 //   - lib/billing-rules.ts            (downgrade lock + custom-min validation)
-//   - lib/razorpay.ts                 (re-exports PLANS for backward compat)
 //
 // Pricing model: PURE PREPAID one-time purchase. Minutes never expire.
 // Top up anytime — verify route ADDS minutes to balance, never resets.
@@ -32,7 +31,7 @@ export type PlanId = 'free' | 'starter' | 'growth' | 'scale';
 export interface Plan {
   id: PlanId;
   name: string;
-  /** Pack price in INR paise (Razorpay's required unit). 0 for free plan. */
+  /** Pack price in INR paise. 0 for free plan. */
   price: number;
   /** Display string for the pack price on the billing card. */
   priceDisplay: string;

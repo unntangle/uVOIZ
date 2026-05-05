@@ -1,21 +1,16 @@
-// ============================================
-// DEPRECATED — Razorpay was replaced by Cashfree on 2026-05-03.
-// All imports should now use `@/lib/cashfree` instead.
-// This file is kept as an empty stub so a stale import surfaces a
-// clear, named error rather than the ambiguous "module not found".
-// Safe to delete once the codebase is confirmed clean.
-// ============================================
+/**
+ * Razorpay — REMOVED
+ *
+ * Razorpay was replaced by Cashfree on 2026-05-03. All billing now flows
+ * through `@/lib/cashfree`. This file previously held a deprecation shim
+ * that threw on import; that shim is no longer needed because no callers
+ * import this module any more (verified 2026-05-05).
+ *
+ * Kept as an empty stub solely so a stale import — should one ever
+ * resurface from a long-lived branch — fails with "module is empty"
+ * rather than a confusing "module not found".
+ *
+ * Safe to delete this file outright.
+ */
 
-const REMOVED = (name: string) =>
-  `lib/razorpay.ts has been removed. \`${name}\` is no longer available. ` +
-  `Update your import to use @/lib/cashfree instead.`;
-
-export const PLANS = new Proxy({} as any, {
-  get(_t, prop) { throw new Error(REMOVED(`PLANS.${String(prop)}`)); },
-});
-
-export function createOrder(): never { throw new Error(REMOVED('createOrder')); }
-export function verifySignature(): never { throw new Error(REMOVED('verifySignature')); }
-export function createCustomer(): never { throw new Error(REMOVED('createCustomer')); }
-export function createSubscription(): never { throw new Error(REMOVED('createSubscription')); }
-export function getSubscription(): never { throw new Error(REMOVED('getSubscription')); }
+export {};

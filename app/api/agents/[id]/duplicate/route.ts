@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { getOrg, getAgentById, createAgent } from '@/lib/db';
-import { createVapiAssistant } from '@/lib/vapi';
+import { getVoiceProvider } from '@/lib/voice-provider';
 
 /**
  * Duplicate an existing assistant. Path-as-action keeps the verb
@@ -10,14 +10,21 @@ import { createVapiAssistant } from '@/lib/vapi';
  * Behavior:
  *   1. Fetch source agent (org-scoped — security boundary).
  *   2. Build new name "{name} (copy)" so the user can find it in the list.
- *   3. Create a fresh VAPI assistant with the same config (so VAPI ids
- *      stay 1:1 with our rows — never share a vapi_assistant_id between
- *      two of our rows).
+ *   3. Materialise a fresh upstream assistant via the configured voice
+ *      provider, so the upstream id stays 1:1 with our rows. Sharing
+ *      an upstream id between two of our rows would mean a rename or
+ *      delete on one row silently affects the other.
  *   4. Insert the new agent row, return it.
  *
- * If VAPI provisioning fails we still create the local row; the agent
- * just won't be callable until reconfigured. Same fallback as the
- * original POST /api/agents handler.
+ * If upstream provisioning fails we still create the local row; the
+ * agent just won't be callable until reconfigured. Same fallback as
+ * the original POST /api/agents handler.
+ *
+ * Historical note: this route used to import createVapiAssistant from
+ * lib/vapi.ts directly. After the provider-abstraction refactor that
+ * shim returned `unknown` so `vapiAssistant.id` failed type checking
+ * on a strict Vercel build. Migrated to getVoiceProvider() to match
+ * the parent /api/agents route and get a properly typed `.id`.
  */
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -36,23 +43,24 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     const newName = `${source.name || 'Assistant'} (copy)`;
 
-    // Provision a new VAPI assistant rather than reusing the source's
-    // vapi_assistant_id. Sharing the VAPI id would mean both rows control
-    // the same upstream assistant — renames or deletes on one would
-    // silently affect the other. One row, one VAPI id.
+    // Provision a new upstream assistant rather than reusing the
+    // source's id. Sharing the upstream id would mean both rows
+    // control the same upstream assistant — renames or deletes on
+    // one would silently affect the other. One row, one upstream id.
     let vapiAssistantId: string | undefined;
     if (process.env.VAPI_API_KEY) {
       try {
-        const vapiAssistant = await createVapiAssistant({
+        const provider = getVoiceProvider();
+        const assistant = await provider.createAssistant({
           name: newName,
           voice: source.voice,
           language: source.language,
           personality: source.personality,
           script: source.script || '',
         });
-        vapiAssistantId = vapiAssistant.id;
+        vapiAssistantId = assistant.id;
       } catch (e) {
-        console.error('VAPI assistant duplicate failed:', e);
+        console.error('Voice provider assistant duplicate failed:', e);
       }
     }
 

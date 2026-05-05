@@ -36,7 +36,7 @@ import { canBuyPack } from '@/lib/billing-rules';
  *     color (amber / blue / green) which made the page feel busy and
  *     unfocused — three same-color stats reads as one clean dashboard.
  *
- * Payment provider: Cashfree (replaced Razorpay 2026-05-03).
+ * Payment provider: Cashfree.
  *
  * Tier rules — enforced by lib/billing-rules.ts and mirrored here:
  *   - Pack at same/higher tier: always buyable.

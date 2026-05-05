@@ -15,9 +15,9 @@ import { supabaseAdmin } from '@/lib/supabase';
  * POST /api/billing/verify
  *
  * Confirms a Cashfree payment after the JS SDK closes the checkout modal,
- * then credits the org. Cashfree differs from Razorpay in that there is no
- * client-side HMAC signature to verify — instead we re-fetch the order
- * from Cashfree's API and trust it iff `order_status === 'PAID'`.
+ * then credits the org. There is no client-side HMAC signature to verify
+ * — instead we re-fetch the order from Cashfree's API and trust it iff
+ * `order_status === 'PAID'`.
  *
  * Two paths:
  *
