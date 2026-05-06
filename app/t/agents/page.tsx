@@ -19,9 +19,42 @@ import { Agent } from '@/types';
  * internals too, this is the file that will need the most edits.
  */
 
-const VOICES = ['Priya (Female)', 'Arjun (Male)', 'Kavya (Female)', 'Rahul (Male)', 'Deepa (Female)', 'Vikram (Male)'];
+// Voices listed females-first then males-first, then by archetype within each
+// gender. Grouping by gender makes the dropdown faster to scan: a manager who
+// wants a female voice doesn't have to weave around male ones to compare
+// options. Within each gender, ordered from most general-purpose at the top
+// (Priya/Arjun) to more specialised at the bottom (Deepika/Vikram for
+// formal/B2B contexts).
+const VOICES = [
+  'Priya (Female)',    // warm — support, retention
+  'Kavya (Female)',    // bright — reminders, announcements
+  'Deepika (Female)',  // mature — banking, healthcare, formal
+  'Arjun (Male)',      // confident — outbound sales
+  'Rahul (Male)',      // calm — collections, sensitive conversations
+  'Vikram (Male)',     // authoritative — premium B2B outbound
+];
 const LANGUAGES = ['English', 'Hindi + English', 'Tamil + English', 'Telugu + English', 'Kannada + English', 'Marathi + English'];
-const PERSONALITIES = ['Friendly & Empathetic', 'Confident & Persuasive', 'Professional & Concise', 'Warm & Patient', 'Energetic & Enthusiastic'];
+// Personality is a single adjective dropped into the LLM system prompt:
+//   "You are {agent_name}, a {personality.lower()} voice assistant from uVOIZ."
+//
+// One word each, deliberately. Earlier we shipped two-word labels like
+// "Friendly & Empathetic" — the ampersand made the prompt ungainly and the
+// labels overlapped semantically (what's actually different between
+// "Friendly & Empathetic" and "Warm & Patient"?). Five clean adjectives
+// each meaning something a BPO manager can map to a real campaign:
+//
+//   Friendly      — neutral default; works with any voice / any campaign
+//   Confident     — assertive; outbound sales, lead conversion
+//   Professional  — formal & businesslike; banking, healthcare, B2B
+//   Empathetic    — gentle; retention, support, sensitive collections
+//   Energetic     — high-energy; promotions, event reminders, announcements
+//
+// Note: personality intentionally does NOT have to match the chosen voice.
+// A Priya (warm voice) + Confident (assertive language) agent is a valid
+// pairing — the voice carries the audible warmth, personality nudges word
+// choice. Voice does ~80% of perceived agent character; personality is the
+// remaining 20%.
+const PERSONALITIES = ['Friendly', 'Confident', 'Professional', 'Empathetic', 'Energetic'];
 
 // Pre-built option arrays for the Dropdown component. Defined at module
 // scope so the references stay stable across renders — passing freshly

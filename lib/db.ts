@@ -51,13 +51,47 @@ export async function updateOrgMinutes(orgId: string, minutesUsed: number) {
 }
 
 // ---- Campaigns ----
+
+/**
+ * A 'paused' campaign with zero contacts is a confusing dead state for
+ * the user — there's nothing to resume to. The product rule is that a
+ * campaign without contacts can only be in 'draft', so we coerce on
+ * read. This handles three cases:
+ *
+ *   1. Historical rows from before the contact-required guard existed.
+ *   2. Rows where all contacts were deleted while paused.
+ *   3. The dialer cron pausing for out-of-minutes when the contact
+ *      queue happens to be empty.
+ *
+ * We do not write back here — lazy normalization through the next PATCH
+ * keeps the read path side-effect-free. The UI will see 'draft' and
+ * behave correctly (Start button enabled only after contacts upload).
+ *
+ * Trusts campaigns.total_contacts (the denormalized counter) rather
+ * than COUNT(*) on contacts, because this runs in list-view loops where
+ * an extra subquery per campaign would matter. Single-row reads use
+ * the same helper for consistency — if the counter ever drifts the
+ * fix is in one place.
+ */
+export function normalizeCampaignStatus<T extends { status?: string | null; total_contacts?: number | null }>(
+  row: T,
+): T {
+  if (!row) return row;
+  const total = row.total_contacts ?? 0;
+  if (row.status === 'paused' && total === 0) {
+    return { ...row, status: 'draft' };
+  }
+  return row;
+}
+
+// ---- Campaigns ----
 export async function getCampaigns(orgId: string) {
   const { data } = await supabaseAdmin
     .from('campaigns')
     .select('*, agents(name)')
     .eq('org_id', orgId)
     .order('created_at', { ascending: false });
-  return data || [];
+  return (data || []).map(normalizeCampaignStatus);
 }
 
 /**
@@ -77,7 +111,7 @@ export async function getCampaignById(orgId: string, campaignId: string) {
     console.error('getCampaignById DB error:', { orgId, campaignId, error });
     return null;
   }
-  return data;
+  return data ? normalizeCampaignStatus(data) : null;
 }
 
 export async function createCampaign(orgId: string, payload: {
@@ -149,7 +183,7 @@ export async function updateCampaign(orgId: string, campaignId: string, updates:
     console.error('updateCampaign DB error:', { orgId, campaignId, error });
     return null;
   }
-  return data;
+  return data ? normalizeCampaignStatus(data) : null;
 }
 
 /**

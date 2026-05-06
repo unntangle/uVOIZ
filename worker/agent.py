@@ -101,10 +101,19 @@ class PersonaConfig:
 
 
 PERSONA_TO_BULBUL: dict[str, PersonaConfig] = {
-    "Priya (Female)": PersonaConfig(speaker="priya", description="Warm & Empathetic"),
-    "Arjun (Male)":   PersonaConfig(speaker="rahul", description="Confident & Clear"),
-    "Kavya (Female)": PersonaConfig(speaker="kavya", description="Friendly & Bright"),
-    "Rahul (Male)":   PersonaConfig(speaker="aditya", description="Calm & Professional"),
+    "Priya (Female)":  PersonaConfig(speaker="priya",  description="Warm & Empathetic"),
+    "Arjun (Male)":    PersonaConfig(speaker="rahul",  description="Confident & Clear"),
+    "Kavya (Female)":  PersonaConfig(speaker="kavya",  description="Friendly & Bright"),
+    "Rahul (Male)":    PersonaConfig(speaker="aditya", description="Calm & Professional"),
+    # Newer additions — see lib/providers/sarvam-tts.ts for the
+    # archetype rationale. Deepa fills the "mature business female"
+    # slot (banking, healthcare); Vikram fills the "senior
+    # authoritative male" slot (B2B outbound to decision-makers).
+    # Without these mappings, the worker would fall through to the
+    # default speaker and play a Vikram-labeled agent in a Priya
+    # voice — which is exactly the bug we're fixing.
+    "Deepika (Female)": PersonaConfig(speaker="maya",   description="Mature & Professional"),
+    "Vikram (Male)":   PersonaConfig(speaker="arvind", description="Authoritative & Senior"),
 }
 
 DEFAULT_PERSONA = "Priya (Female)"

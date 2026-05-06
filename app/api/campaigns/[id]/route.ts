@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 import { getOrg, getCampaignById, updateCampaign, deleteCampaign } from '@/lib/db';
+import { supabaseAdmin } from '@/lib/supabase';
 
 /**
  * Single-campaign CRUD for the CampaignCard's three-dot menu
@@ -58,6 +59,48 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
+    }
+
+    // Guard: a campaign cannot be activated until it has at least one
+    // contact. The dialer cron has nothing to do for a 0-contact
+    // campaign, so flipping status → 'active' would create a row that
+    // looks running but never makes a call — a confusing dead state
+    // for the user. The UI disables the Start button in this case but
+    // we re-check on the server because UI guards are easily bypassed
+    // (curl, scripted clients, stale tabs after a contact was deleted).
+    //
+    // Symmetric rule for 'paused': a paused campaign with 0 contacts is
+    // also a dead state — nothing to resume to. Rather than 400'ing,
+    // we silently coerce paused→0 → 'draft', because the user's
+    // intent ("stop running") is preserved and 'draft' is the correct
+    // resting state for an unconfigured campaign.
+    //
+    // We count from the contacts table directly rather than reading
+    // campaigns.total_contacts, because that column is a denormalized
+    // counter maintained by application code and could drift. A HEAD
+    // count is one indexed query and stays correct under any path.
+    if ((updates.status === 'active' || updates.status === 'paused') && supabaseAdmin) {
+      const { count, error: countError } = await supabaseAdmin
+        .from('contacts')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', org.id)
+        .eq('campaign_id', id);
+
+      if (countError) {
+        console.error('PATCH campaign: contact count failed', countError);
+        return NextResponse.json({ error: 'Failed to verify campaign contacts' }, { status: 500 });
+      }
+      if (!count || count === 0) {
+        if (updates.status === 'active') {
+          return NextResponse.json(
+            { error: 'Upload at least one contact before starting this campaign.' },
+            { status: 400 }
+          );
+        }
+        // paused + 0 contacts → coerce to draft. This is the only legal
+        // resting state for a campaign with no work to do.
+        updates.status = 'draft';
+      }
     }
 
     const updated = await updateCampaign(org.id, id, updates);

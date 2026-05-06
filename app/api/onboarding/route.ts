@@ -142,7 +142,11 @@ export async function POST(req: NextRequest) {
               : primaryLanguage === 'ta'
               ? 'Tamil + English'
               : 'English',
-          personality: 'Friendly & Empathetic',
+          // 'Friendly' is the neutral default in the personality dropdown.
+          // See app/t/agents/page.tsx PERSONALITIES for the canonical list.
+          // Used to be 'Friendly & Empathetic' before the personality
+          // labels were simplified to single adjectives.
+          personality: 'Friendly',
           script: defaultScript,
         });
 
@@ -154,7 +158,7 @@ export async function POST(req: NextRequest) {
             name: 'Default Agent',
             voice: 'Priya (Female)',
             language: primaryLanguage === 'hi' ? 'Hindi + English' : 'English',
-            personality: 'Friendly & Empathetic',
+            personality: 'Friendly',
             script: defaultScript,
             // Field name in the request body stays vapiAssistantId for
             // back-compat with the /api/agents handler that consumes it.

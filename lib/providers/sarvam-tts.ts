@@ -36,17 +36,37 @@ const SARVAM_TTS_MODEL = 'bulbul:v3' as const;
 // Persona mapping
 // ─────────────────────────────────────────────────────────────────
 //
-// Bulbul V3 ships 39 speaker voices. We've curated four that match
+// Bulbul V3 ships ~16 speaker voices. We've curated SIX that match
 // the existing UI personas. Picks made on the basis of:
 //   - Female / male match (UI labels declare it)
 //   - Low Critical Error Rate per Sarvam's published benchmarks
 //   - Tone fit for Indian BPO sales/support context — neutral and
 //     warm rather than dramatic or character-y
+//   - Coverage of distinct use-case archetypes (warm support voice,
+//     confident outbound voice, mature business voice, etc.) so the
+//     six options actually sound different and serve different
+//     campaigns rather than offering six near-identical voices
 //
 // Notably AVOIDED: 'varun' — has the lowest CER (0.06%) on paper but
 // Sarvam explicitly notes it carries a "deep, dramatic villain/
 // suspense character" and is unsuitable as a neutral voice. A villain
 // reading EMI reminders would not go well.
+//
+// Persona-to-archetype map (so future-you knows why each persona
+// exists):
+//   Priya    — warm female,        for support / retention calls
+//   Kavya    — bright female,      for reminders / announcements
+//   Deepika  — mature female,      for formal / banking / healthcare
+//   Arjun    — confident male,     for outbound sales
+//   Rahul    — calm male,          for collections / sensitive talks
+//   Vikram   — authoritative male, for premium B2B outbound
+//
+// History: the UI used to expose six labels but only four had real
+// Bulbul mappings. Customers picking 'Deepika' or 'Vikram' silently
+// got the default speaker (Priya — wrong gender for Vikram). Fixed
+// by mapping Deepika → 'maya' and Vikram → 'arvind'. Both are real
+// Bulbul V3 speakers chosen for tone differentiation from the
+// existing four.
 //
 // If you want to retune these, the full speaker list and tone notes
 // are at https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/text-to-speech/how-to/change-the-speaker-voice
@@ -54,12 +74,19 @@ const SARVAM_TTS_MODEL = 'bulbul:v3' as const;
 // IMPORTANT: speaker names are case-sensitive lowercase. 'Priya' (the
 // persona) maps to 'priya' (the speaker id). Don't capitalize the
 // values below.
+//
+// CROSS-REPO SYNC: this map is duplicated in worker/agent.py as
+// PERSONA_TO_BULBUL. Both must agree. Worker wins for live calls;
+// this TS map is used for sample-clip generation. When you change
+// one, change the other in the SAME commit.
 
 export type AgentPersona =
   | 'Priya (Female)'
   | 'Arjun (Male)'
   | 'Kavya (Female)'
-  | 'Rahul (Male)';
+  | 'Rahul (Male)'
+  | 'Deepika (Female)'
+  | 'Vikram (Male)';
 
 export interface PersonaConfig {
   /** Bulbul V3 speaker id, lowercase. */
@@ -89,6 +116,24 @@ export const PERSONA_TO_BULBUL: Record<AgentPersona, PersonaConfig> = {
   'Rahul (Male)': {
     speaker: 'aditya',
     description: 'Calm & Professional',
+  },
+  'Deepika (Female)': {
+    // 'maya' — mature, even-toned female. Sits between Priya's warmth
+    // and Kavya's brightness; reads as more formal/business than
+    // either. Good for banking, healthcare, insurance verticals where
+    // the caller wants to feel they're talking to a professional, not
+    // a friend.
+    speaker: 'maya',
+    description: 'Mature & Professional',
+  },
+  'Vikram (Male)': {
+    // 'arvind' — older, deeper male voice with natural authority.
+    // Distinct from rahul (Arjun, confident) and aditya (Rahul, calm)
+    // by virtue of being noticeably more senior-sounding. Pairs well
+    // with B2B outbound where the call recipient is a decision-maker
+    // who'd dismiss a younger-sounding caller.
+    speaker: 'arvind',
+    description: 'Authoritative & Senior',
   },
 };
 

@@ -106,12 +106,24 @@ async function runDialer() {
         .single();
 
       if (!org || org.minutes_used >= org.minutes_limit) {
-        // Pause the campaign if out of minutes
+        // Out of minutes — stop the campaign. The legal resting state
+        // depends on whether contacts still exist:
+        //   - contacts > 0 → 'paused' (user can top up minutes and resume).
+        //   - contacts = 0 → 'draft' (paused with nothing to call would
+        //     be a confusing dead state; matches the rule enforced in
+        //     the PATCH handler and the read-side normalization in
+        //     lib/db.ts so all writers agree).
+        const { count: contactCount } = await supabaseAdmin
+          .from('contacts')
+          .select('id', { count: 'exact', head: true })
+          .eq('campaign_id', campaign.id);
+        const nextStatus = (contactCount ?? 0) > 0 ? 'paused' : 'draft';
+
         await supabaseAdmin
           .from('campaigns')
-          .update({ status: 'paused' })
+          .update({ status: nextStatus })
           .eq('id', campaign.id);
-        console.log(`Campaign ${campaign.id} paused due to insufficient minutes.`);
+        console.log(`Campaign ${campaign.id} → ${nextStatus} (out of minutes, ${contactCount ?? 0} contacts).`);
         continue;
       }
 
