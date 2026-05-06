@@ -490,7 +490,7 @@ export default function Campaigns() {
       header.map(escapeCell).join(','),
       ...rows.map((c) => {
         const status = (c.status || 'pending').toString();
-        const outcomeKey = outcomeIsKnown(c.outcome) ? c.outcome : null;
+        const outcomeKey = outcomeIsKnown(c.outcome) ? (c.outcome as OutcomeKey) : null;
         const outcomeLabel = outcomeKey ? OUTCOME_META[outcomeKey].label : '';
         return [
           escapeCell(c.name || ''),
@@ -1657,7 +1657,7 @@ export default function Campaigns() {
                             // constraint blocks them) also render as
                             // em-dash so the UI never crashes on a
                             // bucket it doesn't know about.
-                            const outcomeKey = outcomeIsKnown(c.outcome) ? c.outcome : null;
+                            const outcomeKey = outcomeIsKnown(c.outcome) ? (c.outcome as OutcomeKey) : null;
                             const outcomeMeta = outcomeKey ? OUTCOME_META[outcomeKey] : null;
 
                             return (
@@ -2843,7 +2843,7 @@ function ContactDrawer({ contact, calls, loading, error, onClose }: ContactDrawe
 function CallEntry({ call }: { call: any }) {
   // Outcome badge resolution. Same fallback as the contacts table:
   // unknown/missing outcome renders as em-dash, never crashes.
-  const outcomeKey = outcomeIsKnown(call.outcome) ? call.outcome : null;
+  const outcomeKey = outcomeIsKnown(call.outcome) ? (call.outcome as OutcomeKey) : null;
   const outcomeMeta = outcomeKey ? OUTCOME_META[outcomeKey] : null;
 
   // Format duration as m:ss when present, em-dash when not. We don't
