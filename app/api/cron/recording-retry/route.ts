@@ -31,6 +31,25 @@ import { ingestRecordingForCall } from '@/lib/recording-fetch';
 const MAX_BATCH = 20;
 
 /**
+ * Wall-clock budget for the whole run. The route MUST respond before
+ * Vercel's function timeout (maxDuration below) or the platform kills
+ * it with a 504 — which makes the GitHub Actions curl fail and sends a
+ * "Run failed" email every 10 minutes. We stop picking up new rows once
+ * the budget is spent; whatever's left is picked up by the next run.
+ * Budget (40s) + one worst-case in-flight fetch (15s) stays under 60s.
+ */
+const TIME_BUDGET_MS = 40_000;
+
+/**
+ * Tell Vercel this function may run up to 60s (the batch loop is
+ * time-budgeted above so we always return before this is hit). Without
+ * this export the route gets the plan-default timeout, which is shorter
+ * than a batch of recording fetches and was the direct cause of the
+ * cron's 504s.
+ */
+export const maxDuration = 60;
+
+/**
  * Skip rows older than this — VAPI recordings expire after a few hours
  * and 7 days is a generous ceiling. Older calls are permanently lost
  * audio, no point retrying. Kept as a constant so it's easy to tune.
@@ -102,9 +121,19 @@ async function runRetry() {
   let succeeded = 0;
   let failedRetriable = 0;
   let failedPermanent = 0;
+  let deferred = 0;
   const details: Array<{ callId: string; result: string }> = [];
+  const startedAt = Date.now();
 
   for (const row of pending) {
+    // Time-budget guard: never start a new fetch if we're close to the
+    // function timeout. Better to return a partial-success 200 than to
+    // get 504'd mid-row (which fails the whole workflow run AND leaves
+    // no JSON body to debug from).
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      deferred = pending.length - details.length;
+      break;
+    }
     const result = await ingestRecordingForCall(row.id);
     if (result.ok) {
       if (!result.skipped) succeeded += 1;
@@ -129,6 +158,7 @@ async function runRetry() {
     succeeded,
     failedRetriable,
     failedPermanent,
+    deferred, // rows skipped this run due to time budget; next run gets them
     details,
   });
 }

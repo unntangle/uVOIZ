@@ -311,7 +311,16 @@ export async function fetchAndStoreRecording(params: {
   //    behind their API key — VAPI does this. The caller is responsible
   //    for passing a URL that's already been resolved/authorized; this
   //    helper just does the byte transfer.
-  const response = await fetch(params.sourceUrl);
+  //
+  //    Hard 15s timeout: without it, a hung upstream connection stalls
+  //    the retry cron's serial loop indefinitely, blowing past both
+  //    Vercel's function limit and the GitHub Actions curl --max-time,
+  //    which is what makes the whole workflow run report as failed.
+  //    15s pairs with the cron route's 40s time budget: budget + one
+  //    worst-case in-flight fetch stays under the 60s maxDuration.
+  const response = await fetch(params.sourceUrl, {
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!response.ok) {
     throw new Error(
       `Recording fetch failed: ${response.status} ${response.statusText} ` +

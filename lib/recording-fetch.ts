@@ -111,11 +111,20 @@ export async function ingestRecordingForCall(
       callId: call.id,
     });
   } catch (err: any) {
-    // Classify the error. 404 from VAPI is permanent (recording
-    // expired or never existed); anything else is worth retrying.
+    // Classify the error. VAPI recording URLs are signed and expire
+    // after a few hours — an expired URL comes back as 403 or 410, and
+    // a recording that never existed as 404. All three are permanent:
+    // retrying will never succeed, and because the retry cron pulls
+    // oldest-first, treating them as retriable turns them into poison
+    // rows that starve every subsequent run (this is what caused the
+    // cron to time out and fail repeatedly). Anything else (network
+    // blip, 429, 5xx from upstream, R2 hiccup) is worth retrying.
     const msg = String(err?.message || err);
     const isPermanent =
-      msg.includes('404') || msg.includes('not found');
+      msg.includes('404') ||
+      msg.includes('not found') ||
+      /Recording fetch failed: 40[13]/.test(msg) ||
+      msg.includes('Recording fetch failed: 410');
     console.error('ingestRecording: fetch/upload failed', {
       callId,
       key,
